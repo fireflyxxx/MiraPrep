@@ -35,6 +35,9 @@ body {
   a:hover {
     color: #c2410c;
   }
+  button:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 ::selection {
