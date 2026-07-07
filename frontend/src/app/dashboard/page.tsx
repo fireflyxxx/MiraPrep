@@ -12,9 +12,9 @@ const sidebarItems = [
 
 export default function DashboardPage() {
   return (
-    <div className="animate-mira-screen-in grid min-h-screen grid-cols-1 bg-[#fafafa] md:grid-cols-[248px_1fr]">
+    <div className="grid min-h-screen grid-cols-1 bg-[#fafafa] md:grid-cols-[248px_1fr]">
       <aside className="sticky top-0 hidden h-screen flex-col border-r border-[#eee] bg-white p-[18px] pt-6 md:flex">
-        <Link href="/" className="mb-[26px] px-2.5 py-1.5">
+        <Link href="/" transitionTypes={["nav-back"]} className="mb-[26px] px-2.5 py-1.5">
           <Logo />
         </Link>
         <nav className="flex flex-col gap-[3px]">
@@ -85,6 +85,7 @@ export default function DashboardPage() {
               </p>
               <Link
                 href="/interview/setup"
+                transitionTypes={["nav-forward"]}
                 className="inline-block rounded-[11px] bg-orange-500 px-[26px] py-[13px] text-[15px] font-medium text-white hover:text-white"
               >
                 开始准备 →
@@ -123,6 +124,7 @@ export default function DashboardPage() {
               <Link
                 key={i}
                 href={`/report/demo-${i + 1}`}
+                transitionTypes={["nav-forward"]}
                 className={`grid cursor-pointer grid-cols-[1fr_auto_auto_auto] items-center gap-5 px-6 py-4 hover:bg-[#fafafa] ${
                   i < interviewHistory.length - 1 ? "border-b border-[#f5f5f5]" : ""
                 }`}

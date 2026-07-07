@@ -18,7 +18,10 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
   const answered = questions.slice(0, qIndex).map((q, i) => ({ n: `Q${i + 1}`, q: q.q, a: q.a }));
   const qBig = qIndex + 1 < 10 ? `0${qIndex + 1}` : `${qIndex + 1}`;
 
-  const goResult = () => router.push(`/interview/${sessionId}/result`);
+  const goResult = () =>
+    router.push(`/interview/${sessionId}/result`, {
+      transitionTypes: ["nav-reveal"],
+    });
 
   const nextQuestion = () => {
     if (isRecording) return;
@@ -52,7 +55,7 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
       : "点击左侧麦克风，开始语音回答";
 
   return (
-    <div className="animate-mira-screen-in flex min-h-screen flex-col bg-white text-[#0a0a0a]">
+    <div className="flex min-h-screen flex-col bg-white text-[#0a0a0a]">
       <div className="flex items-center justify-between border-b border-[#eee] px-5 py-4 md:px-8">
         <div className="flex items-center gap-3.5">
           <Logo size="sm" />

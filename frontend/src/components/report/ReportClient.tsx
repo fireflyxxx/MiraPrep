@@ -19,11 +19,12 @@ export default function ReportClient({ sessionId }: { sessionId: string }) {
   const hiddenCount = all.length - visible.length;
 
   return (
-    <div data-session={sessionId} className="animate-mira-screen-in min-h-screen bg-[#fafafa]">
+    <div data-session={sessionId} className="min-h-screen bg-[#fafafa]">
       <div className="sticky top-0 z-20 flex items-center justify-between border-b border-[#eee] bg-white px-6 py-4 md:px-10">
         <div className="flex items-center gap-4">
           <Link
             href="/dashboard"
+            transitionTypes={["nav-back"]}
             className="rounded-[9px] border border-[#e5e5e5] bg-white px-3.5 py-2 text-[13px] text-[#525252]"
           >
             ← 工作台
@@ -36,6 +37,7 @@ export default function ReportClient({ sessionId }: { sessionId: string }) {
           </button>
           <Link
             href="/interview/setup"
+            transitionTypes={["nav-forward"]}
             className="rounded-[9px] bg-orange-500 px-4 py-2 text-[13px] font-medium text-white hover:text-white"
           >
             再练一场

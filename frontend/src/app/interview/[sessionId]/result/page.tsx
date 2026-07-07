@@ -8,7 +8,7 @@ export default async function InterviewResultPage({
   const { sessionId } = await params;
 
   return (
-    <div className="animate-mira-screen-in relative flex min-h-screen items-center justify-center overflow-hidden bg-white px-6 py-8 text-[#0a0a0a]">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-white px-6 py-8 text-[#0a0a0a]">
       <div
         className="pointer-events-none absolute top-[-12%] left-1/2 h-[640px] w-[640px] -translate-x-1/2"
         style={{
@@ -62,12 +62,14 @@ export default async function InterviewResultPage({
         <div className="flex gap-3">
           <Link
             href="/dashboard"
+            transitionTypes={["nav-back"]}
             className="flex-1 rounded-xl border border-[#e5e5e5] bg-white py-3.5 text-[14.5px] text-[#0a0a0a] hover:text-[#0a0a0a]"
           >
             返回工作台
           </Link>
           <Link
             href={`/report/${sessionId}`}
+            transitionTypes={["nav-forward"]}
             className="flex-[1.4] rounded-xl bg-orange-500 py-3.5 text-[14.5px] font-medium text-white shadow-[0_8px_24px_rgba(249,115,22,0.3)] hover:text-white"
           >
             查看完整报告 →

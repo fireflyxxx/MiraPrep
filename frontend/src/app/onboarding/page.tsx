@@ -31,7 +31,7 @@ export default function OnboardingPage() {
 
   const next = () => {
     if (step === 1) setStep(2);
-    else router.push("/dashboard");
+    else router.push("/dashboard", { transitionTypes: ["nav-modal-out"] });
   };
 
   return (
@@ -156,7 +156,9 @@ export default function OnboardingPage() {
           </div>
           <div className="flex gap-2.5">
             <button
-              onClick={() => router.push("/dashboard")}
+              onClick={() =>
+                router.push("/dashboard", { transitionTypes: ["nav-modal-out"] })
+              }
               className="rounded-[9px] px-4 py-2.5 text-[13.5px] text-[#a3a3a3]"
             >
               跳过

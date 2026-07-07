@@ -72,15 +72,15 @@ export default function InterviewSetupPage() {
 
   const goNext = () => {
     if (step < 3) setStep((s) => (s + 1) as 1 | 2 | 3);
-    else router.push("/interview/demo");
+    else router.push("/interview/demo", { transitionTypes: ["nav-forward"] });
   };
   const goBack = () => {
-    if (step === 1) router.push("/dashboard");
+    if (step === 1) router.push("/dashboard", { transitionTypes: ["nav-back"] });
     else setStep((s) => (s - 1) as 1 | 2 | 3);
   };
 
   return (
-    <div className="animate-mira-screen-in min-h-screen bg-[#fafafa]">
+    <div className="min-h-screen bg-[#fafafa]">
       <div className="sticky top-0 z-20 flex items-center justify-between border-b border-[#eee] bg-white px-6 py-[18px] md:px-10">
         <div className="flex items-center gap-4">
           <button

@@ -11,12 +11,16 @@ export default function AuthPage() {
   const isRegister = tab === "register";
 
   const handleSubmit = () => {
-    router.push(isRegister ? "/onboarding" : "/dashboard");
+    if (isRegister) {
+      router.push("/onboarding", { transitionTypes: ["nav-modal-in"] });
+    } else {
+      router.push("/dashboard", { transitionTypes: ["nav-forward"] });
+    }
   };
 
   return (
-    <div className="animate-mira-screen-in flex min-h-screen flex-col justify-between px-6 py-10 md:px-14">
-      <Link href="/" className="cursor-pointer">
+    <div className="flex min-h-screen flex-col justify-between px-6 py-10 md:px-14">
+      <Link href="/" transitionTypes={["nav-back"]} className="cursor-pointer">
         <Logo size="lg" />
       </Link>
 

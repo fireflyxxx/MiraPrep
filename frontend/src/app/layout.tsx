@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, Noto_Sans_SC } from "next/font/google";
+import RouteTransition from "@/components/RouteTransition";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -31,7 +32,7 @@ export default function RootLayout({
       className={`${spaceGrotesk.variable} ${notoSansSC.variable}`}
     >
       <body className="min-h-screen bg-white font-sans text-[#0a0a0a] antialiased">
-        {children}
+        <RouteTransition>{children}</RouteTransition>
       </body>
     </html>
   );

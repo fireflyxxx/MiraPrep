@@ -44,12 +44,14 @@ export default function LandingNav() {
       <div className="flex items-center gap-3">
         <Link
           href="/auth"
+          transitionTypes={["nav-forward"]}
           className="rounded-[9px] px-4 py-[9px] text-sm text-[#0a0a0a] hover:text-[#0a0a0a]"
         >
           登录
         </Link>
         <Link
           href="/auth"
+          transitionTypes={["nav-forward"]}
           className="rounded-[9px] bg-[#0a0a0a] px-[18px] py-[9px] text-sm font-medium text-white hover:text-white"
         >
           免费开始

@@ -44,7 +44,7 @@ const steps = [
 
 export default function LandingPage() {
   return (
-    <div className="relative animate-mira-screen-in">
+    <div className="relative">
       <LandingNav />
 
       <section className="mx-auto grid max-w-[1180px] grid-cols-1 items-center gap-14 px-10 pt-24 pb-10 md:grid-cols-[1.05fr_.95fr]">
@@ -61,12 +61,14 @@ export default function LandingPage() {
           <div className="flex flex-wrap items-center gap-3.5">
             <Link
               href="/auth"
+              transitionTypes={["nav-forward"]}
               className="rounded-[11px] bg-orange-500 px-[26px] py-3.5 text-[15px] font-medium text-white shadow-[0_6px_20px_rgba(249,115,22,0.28)] transition-all hover:-translate-y-0.5 hover:text-white hover:shadow-[0_10px_26px_rgba(249,115,22,0.36)]"
             >
               开始一场面试 →
             </Link>
             <Link
               href="/interview/demo"
+              transitionTypes={["nav-forward"]}
               className="rounded-[11px] border border-[#e5e5e5] bg-white px-6 py-3.5 text-[15px] font-medium text-[#0a0a0a] transition-all hover:border-[#d4d4d4] hover:bg-[#fafafa] hover:text-[#0a0a0a]"
             >
               观看演示
@@ -200,6 +202,7 @@ export default function LandingPage() {
           </div>
           <Link
             href="/auth"
+            transitionTypes={["nav-forward"]}
             className="rounded-[10px] border border-[#e5e5e5] bg-white px-[22px] py-3 text-sm font-medium text-[#0a0a0a] hover:text-[#0a0a0a]"
           >
             立即开始
@@ -245,6 +248,7 @@ export default function LandingPage() {
             </p>
             <Link
               href="/auth"
+              transitionTypes={["nav-forward"]}
               className="inline-block rounded-[11px] bg-orange-500 px-7 py-3.5 text-[15px] font-medium text-white hover:text-white"
             >
               免费开始 →

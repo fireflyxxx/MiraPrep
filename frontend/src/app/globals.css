@@ -71,16 +71,11 @@ body {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
 }
-@keyframes mira-screen-in {
-  from { opacity: 0; transform: translateY(12px) scale(.995); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
 
 .animate-mira-float { animation: mira-float 6s ease-in-out infinite; }
 .animate-mira-pulse { animation: mira-pulse 1.6s infinite; }
 .animate-mira-pulse-slow { animation: mira-pulse 2.4s ease-in-out infinite; }
 .animate-mira-rise { animation: mira-rise .4s ease; }
-.animate-mira-screen-in { animation: mira-screen-in .4s cubic-bezier(.16,1,.3,1); }
 
 .animate-mira-bar { animation: mira-bar 1s ease-in-out infinite; }
 .animate-mira-bar-1 { animation: mira-bar 1s ease-in-out .1s infinite; }
@@ -91,3 +86,84 @@ body {
 .animate-mira-bar-6 { animation: mira-bar 1s ease-in-out .45s infinite; }
 .animate-mira-bar-7 { animation: mira-bar 1s ease-in-out .5s infinite; }
 .animate-mira-bar-8 { animation: mira-bar 1s ease-in-out .6s infinite; }
+
+/* ---------------------------------------------------------------------
+ * Page-to-page view transitions.
+ * Each nav-* class is a "transition type" tagged on the Link/router.push
+ * that triggers the navigation (see transitionTypes usage across app/).
+ * The same class name is used for both the outgoing (::view-transition-old)
+ * and incoming (::view-transition-new) snapshot, mirroring React's
+ * ViewTransition enter/exit maps in components/RouteTransition.tsx.
+ * ------------------------------------------------------------------- */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes vt-fade-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes vt-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+  /* nav-forward: moving deeper into the flow (landing→auth, dashboard→setup,
+     setup→interview, auth→dashboard, result→report, report→setup, dashboard→report) */
+  @keyframes vt-forward-out { to { translate: -24px 0; } }
+  @keyframes vt-forward-in { from { translate: 24px 0; } }
+  ::view-transition-old(.nav-forward) {
+    animation: 160ms ease-in both vt-fade-out, 300ms cubic-bezier(.16,1,.3,1) both vt-forward-out;
+  }
+  ::view-transition-new(.nav-forward) {
+    animation: 260ms ease-out 70ms both vt-fade-in, 360ms cubic-bezier(.16,1,.3,1) both vt-forward-in;
+  }
+
+  /* nav-back: returning to a previous level (setup/result/report→dashboard, →landing) */
+  @keyframes vt-back-out { to { translate: 24px 0; } }
+  @keyframes vt-back-in { from { translate: -24px 0; } }
+  ::view-transition-old(.nav-back) {
+    animation: 160ms ease-in both vt-fade-out, 300ms cubic-bezier(.16,1,.3,1) both vt-back-out;
+  }
+  ::view-transition-new(.nav-back) {
+    animation: 260ms ease-out 70ms both vt-fade-in, 360ms cubic-bezier(.16,1,.3,1) both vt-back-in;
+  }
+
+  /* nav-modal-in: opening a focused flow that sits above the page (auth→onboarding) */
+  @keyframes vt-modal-in-out { to { scale: .97; } }
+  @keyframes vt-modal-in-in { from { scale: .94; translate: 0 10px; } }
+  ::view-transition-old(.nav-modal-in) {
+    animation: 180ms ease-in both vt-fade-out, 220ms ease-in both vt-modal-in-out;
+  }
+  ::view-transition-new(.nav-modal-in) {
+    animation: 280ms ease-out 90ms both vt-fade-in, 340ms cubic-bezier(.16,1,.3,1) both vt-modal-in-in;
+  }
+
+  /* nav-modal-out: closing a focused flow back to what was underneath (onboarding→dashboard) */
+  @keyframes vt-modal-out-out { to { scale: .96; translate: 0 8px; } }
+  @keyframes vt-modal-out-in { from { scale: .98; } }
+  ::view-transition-old(.nav-modal-out) {
+    animation: 200ms ease-in both vt-fade-out, 240ms ease-in both vt-modal-out-out;
+  }
+  ::view-transition-new(.nav-modal-out) {
+    animation: 260ms ease-out 80ms both vt-fade-in, 320ms cubic-bezier(.16,1,.3,1) both vt-modal-out-in;
+  }
+
+  /* nav-reveal: the big score reveal (interview→result) */
+  @keyframes vt-reveal-out { to { scale: .96; } }
+  @keyframes vt-reveal-in { from { scale: .92; } }
+  ::view-transition-old(.nav-reveal) {
+    animation: 220ms ease-in both vt-fade-out, 260ms ease-in both vt-reveal-out;
+  }
+  ::view-transition-new(.nav-reveal) {
+    animation: 420ms cubic-bezier(.16,1,.3,1) 140ms both vt-fade-in, 480ms cubic-bezier(.16,1,.3,1) both vt-reveal-in;
+  }
+
+  /* nav-fade: fallback for untyped navigations (browser back/forward, direct loads) */
+  ::view-transition-old(.nav-fade) {
+    animation: 150ms ease-out both vt-fade-out;
+  }
+  ::view-transition-new(.nav-fade) {
+    animation: 200ms ease-in both vt-fade-in;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
+}
