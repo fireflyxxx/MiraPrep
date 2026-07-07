@@ -27,12 +27,14 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-a {
-  color: #ea580c;
-  text-decoration: none;
-}
-a:hover {
-  color: #c2410c;
+@layer base {
+  a {
+    color: #ea580c;
+    text-decoration: none;
+  }
+  a:hover {
+    color: #c2410c;
+  }
 }
 
 ::selection {
