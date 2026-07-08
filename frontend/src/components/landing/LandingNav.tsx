@@ -8,54 +8,53 @@ export default function LandingNav() {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 8);
+    const onScroll = () => setScrolled(window.scrollY > 16);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   return (
-    <nav
-      className={`sticky top-0 z-50 flex items-center justify-between px-10 py-[18px] transition-colors duration-200 ${
-        scrolled
-          ? "border-b border-[#ececec] bg-white/72 shadow-[0_1px_12px_rgba(0,0,0,0.03)] backdrop-blur-[14px]"
-          : "border-b border-transparent bg-transparent"
-      }`}
-    >
-      <div className="flex items-center gap-11">
-        <Link href="/" className="flex items-center gap-2.5">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#0a0a0a] font-display text-[15px] font-bold text-white">
-            M
-          </span>
+    <nav className="fixed top-0 right-0 left-0 z-50 flex justify-center px-3 pt-3 md:px-6">
+      <div
+        className={`relative flex h-[68px] items-center justify-between px-5 transition-[width,border-radius,background-color,box-shadow,backdrop-filter,border-color] duration-[900ms] ease-[cubic-bezier(.22,1,.36,1)] md:px-9 ${
+          scrolled
+            ? "w-[min(980px,calc(100vw-24px))] rounded-[28px] border border-white/55 bg-white/62 shadow-[0_18px_60px_-34px_rgba(10,10,10,.65)] backdrop-blur-[22px]"
+            : "w-full rounded-none border border-transparent bg-white/0 shadow-none backdrop-blur-0"
+        }`}
+      >
+        <Link href="/" className="mira-button z-10 flex items-center gap-2.5">
           <Logo />
         </Link>
-        <div className="flex gap-7.5 text-sm text-[#525252]">
-          <a href="#features" className="text-[#525252] hover:text-[#0a0a0a]">
+
+        <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-9 text-sm text-[#525252] sm:flex">
+          <a href="#features" className="text-[#525252] transition-colors hover:text-[#0a0a0a]">
             功能
           </a>
-          <a href="#how" className="text-[#525252] hover:text-[#0a0a0a]">
+          <a href="#how" className="text-[#525252] transition-colors hover:text-[#0a0a0a]">
             工作原理
           </a>
-          <a href="#faq" className="text-[#525252] hover:text-[#0a0a0a]">
+          <a href="#faq" className="text-[#525252] transition-colors hover:text-[#0a0a0a]">
             常见问题
           </a>
         </div>
-      </div>
-      <div className="flex items-center gap-3">
-        <Link
-          href="/auth"
-          transitionTypes={["nav-forward"]}
-          className="rounded-[9px] px-4 py-[9px] text-sm text-[#0a0a0a] hover:text-[#0a0a0a]"
-        >
-          登录
-        </Link>
-        <Link
-          href="/auth"
-          transitionTypes={["nav-forward"]}
-          className="rounded-[9px] bg-[#0a0a0a] px-[18px] py-[9px] text-sm font-medium text-white hover:text-white"
-        >
-          免费开始
-        </Link>
+
+        <div className="z-10 flex items-center gap-2 md:gap-3">
+          <Link
+            href="/auth"
+            transitionTypes={["nav-forward"]}
+            className="mira-button rounded-[11px] px-4 py-[9px] text-sm text-[#0a0a0a] hover:bg-white/65 hover:text-[#0a0a0a]"
+          >
+            登录
+          </Link>
+          <Link
+            href="/auth"
+            transitionTypes={["nav-forward"]}
+            className="mira-button rounded-[13px] bg-[#0a0a0a] px-[18px] py-[9px] text-sm font-medium text-white shadow-[0_8px_22px_-16px_rgba(0,0,0,.65)] hover:text-white"
+          >
+            免费开始
+          </Link>
+        </div>
       </div>
     </nav>
   );

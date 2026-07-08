@@ -14,17 +14,15 @@ export default function DashboardPage() {
   return (
     <div className="grid min-h-screen grid-cols-1 bg-[#fafafa] md:grid-cols-[248px_1fr]">
       <aside className="sticky top-0 hidden h-screen flex-col border-r border-[#eee] bg-white p-[18px] pt-6 md:flex">
-        <Link href="/" transitionTypes={["nav-back"]} className="mb-[26px] px-2.5 py-1.5">
+        <Link href="/" transitionTypes={["nav-back"]} className="mira-button mb-[26px] px-2.5 py-1.5">
           <Logo />
         </Link>
         <nav className="flex flex-col gap-[3px]">
           {sidebarItems.map((item) => (
             <div
               key={item.label}
-              className={`flex cursor-pointer items-center gap-[11px] rounded-[10px] px-3 py-2.5 text-sm ${
-                item.active
-                  ? "bg-[#f5f5f5] font-medium"
-                  : "text-[#525252]"
+              className={`mira-button flex cursor-pointer items-center gap-[11px] rounded-[10px] px-3 py-2.5 text-sm ${
+                item.active ? "bg-[#f5f5f5] font-medium" : "text-[#525252] hover:bg-[#fafafa]"
               }`}
             >
               <span
@@ -49,7 +47,7 @@ export default function DashboardPage() {
         </div>
       </aside>
 
-      <main className="mx-auto w-full max-w-[1000px] px-6 py-9 md:px-11">
+      <main className="animate-mira-page-in mx-auto w-full max-w-[1000px] px-6 py-9 md:px-11">
         <div className="mb-[30px] flex items-start justify-between">
           <div>
             <h1 className="m-0 mb-1.5 text-[27px] font-bold tracking-[-0.02em]">
@@ -64,14 +62,11 @@ export default function DashboardPage() {
           </span>
         </div>
 
-        <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-[1.4fr_1fr]">
+        <div className="mira-stagger mb-4 grid grid-cols-1 gap-4 md:grid-cols-[1.4fr_1fr]">
           <div className="relative overflow-hidden rounded-[20px] bg-[#0a0a0a] p-[30px]">
             <div
               className="absolute -top-[60px] -right-[30px] h-60 w-60"
-              style={{
-                background:
-                  "radial-gradient(circle, rgba(249,115,22,.4), transparent 65%)",
-              }}
+              style={{ background: "radial-gradient(circle, rgba(249,115,22,.4), transparent 65%)" }}
             />
             <div className="relative">
               <div className="mb-3 font-display text-[12.5px] tracking-[0.05em] text-orange-500">
@@ -83,39 +78,33 @@ export default function DashboardPage() {
               <p className="m-0 mb-6 max-w-[320px] text-sm leading-[1.55] text-[#a3a3a3]">
                 上传简历、选择岗位，Mira 会为你定制一轮完整的仿真面试。
               </p>
-              <Link
-                href="/interview/setup"
-                transitionTypes={["nav-forward"]}
-                className="inline-block rounded-[11px] bg-orange-500 px-[26px] py-[13px] text-[15px] font-medium text-white hover:text-white"
-              >
+              <Link href="/interview/setup" transitionTypes={["nav-forward"]} className="mira-button inline-block rounded-[11px] bg-orange-500 px-[26px] py-[13px] text-[15px] font-medium text-white hover:text-white">
                 开始准备 →
               </Link>
             </div>
           </div>
           <div className="grid grid-rows-2 gap-4">
-            <div className="flex flex-col justify-between rounded-[20px] border border-[#eee] bg-white p-[22px]">
+            <div className="mira-surface flex flex-col justify-between rounded-[20px] border border-[#eee] bg-white p-[22px]">
               <div className="text-[13px] text-[#737373]">累计面试</div>
               <div className="flex items-baseline gap-2">
                 <span className="font-display text-[34px] font-bold">7</span>
                 <span className="text-[13px] text-[#a3a3a3]">场</span>
               </div>
             </div>
-            <div className="flex flex-col justify-between rounded-[20px] border border-[#eee] bg-white p-[22px]">
+            <div className="mira-surface flex flex-col justify-between rounded-[20px] border border-[#eee] bg-white p-[22px]">
               <div className="text-[13px] text-[#737373]">最高评级</div>
               <div className="flex items-baseline gap-2">
-                <span className="font-display text-[34px] font-bold text-orange-500">
-                  A-
-                </span>
+                <span className="font-display text-[34px] font-bold text-orange-500">A-</span>
                 <span className="text-[13px] text-[#a3a3a3]">前端 · 上周</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-[20px] border border-[#eee] bg-white">
+        <div className="animate-mira-soft-pop overflow-hidden rounded-[20px] border border-[#eee] bg-white [animation-delay:.16s]">
           <div className="flex items-center justify-between border-b border-[#f2f2f2] px-6 py-5">
             <h3 className="m-0 text-base font-semibold">面试记录</h3>
-            <span className="cursor-pointer text-[13px] text-[#a3a3a3]">
+            <span className="cursor-pointer text-[13px] text-[#a3a3a3] transition-colors hover:text-orange-500">
               查看全部
             </span>
           </div>
@@ -125,15 +114,12 @@ export default function DashboardPage() {
                 key={i}
                 href={`/report/demo-${i + 1}`}
                 transitionTypes={["nav-forward"]}
-                className={`grid cursor-pointer grid-cols-[1fr_auto_auto_auto] items-center gap-5 px-6 py-4 hover:bg-[#fafafa] ${
+                className={`mira-button grid cursor-pointer grid-cols-[1fr_auto_auto_auto] items-center gap-5 px-6 py-4 hover:bg-[#fafafa] ${
                   i < interviewHistory.length - 1 ? "border-b border-[#f5f5f5]" : ""
                 }`}
               >
                 <div className="flex items-center gap-3.5">
-                  <span
-                    className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] font-display font-bold"
-                    style={{ background: item.gradeBg, color: item.gradeColor }}
-                  >
+                  <span className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] font-display font-bold" style={{ background: item.gradeBg, color: item.gradeColor }}>
                     {item.grade}
                   </span>
                   <div>

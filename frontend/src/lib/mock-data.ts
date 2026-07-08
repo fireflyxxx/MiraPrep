@@ -11,7 +11,7 @@ export interface InterviewQuestion {
 
 export const questions: InterviewQuestion[] = [
   {
-    q: "先做个简单的自我介绍吧，重点说说你最近一段最有成就感的前端项目。",
+    q: "先做个简短的自我介绍吧，重点说说你最近一段最有成就感的前端项目。",
     hint: "建议用 STAR 结构：背景、你的角色、方案、可量化的结果。",
     a: "我最近主导重构了公司的数据看板，把首屏加载从 4.2 秒优化到 1.1 秒，主要做了虚拟列表和按需加载。",
     grade: "优秀",
@@ -19,7 +19,7 @@ export const questions: InterviewQuestion[] = [
     time: "3:20",
     reference:
       "STAR 结构陈述：背景、你的角色、具体技术方案、可量化结果；主动点出难点与取舍。",
-    tip: '回答很完整，若能再补一句"这个方案的代价是什么、为什么值得"会更有说服力。',
+    tip: "回答很完整，若能再补一句这个方案的代价是什么、为什么值得，会更有说服力。",
   },
   {
     q: "你在实现虚拟列表时，是如何处理高度不固定的列表项的？滚动中有没有遇到白屏或抖动？",
@@ -30,12 +30,12 @@ export const questions: InterviewQuestion[] = [
     time: "4:05",
     reference:
       "动态测量 + 位置缓存；用 ResizeObserver 监听；二分查找定位可视区间；预留 overscan 缓冲减少白屏。",
-    tip: "思路正确，但没提到 overscan 缓冲区和二分查找定位，补上这两点会更完整。",
+    tip: "思路正确，但没有提到 overscan 缓冲区和二分查找定位，补上这两点会更完整。",
   },
   {
     q: "如果让你设计一个支持千万级数据的前端表格，你会如何分层架构？",
     hint: "先分层，再展开每层的职责与取舍。",
-    a: "主要从前端虚拟滚动的角度讲，数据分片和缓存策略提得比较少。",
+    a: "主要从前端虚拟滚动的角度设计，数据分片和缓存策略提得比较少。",
     grade: "待提升",
     gradeColor: "#a3a3a3",
     time: "5:12",
@@ -52,7 +52,7 @@ export const questions: InterviewQuestion[] = [
     time: "2:48",
     reference:
       "memo / useMemo / useCallback 组合；状态下沉与拆分组件；必要时用 useTransition 处理低优先级更新。",
-    tip: "提到了下沉状态，但没展开 useMemo/useCallback 的具体应用场景，可以举一个实际例子。",
+    tip: "提到了下沉状态，但没有展开 useMemo/useCallback 的具体应用场景，可以举一个实际例子。",
   },
   {
     q: "说一次你和产品或后端产生分歧的经历，你是怎么推进的？",
@@ -120,8 +120,8 @@ export const onboardJobs = [
 
 export const experienceOptions = [
   { id: "0", label: "应届" },
-  { id: "1-3", label: "1–3 年" },
-  { id: "3-5", label: "3–5 年" },
+  { id: "1-3", label: "1-3 年" },
+  { id: "3-5", label: "3-5 年" },
   { id: "5+", label: "5 年以上" },
 ];
 
@@ -145,7 +145,7 @@ export const configJobCards = [
 
 export const configDiffCards = [
   { id: "junior", label: "初级", sub: "应届 / 1 年内" },
-  { id: "mid", label: "中级", sub: "1–3 年" },
+  { id: "mid", label: "中级", sub: "1-3 年" },
   { id: "senior", label: "高级", sub: "3 年以上" },
 ];
 

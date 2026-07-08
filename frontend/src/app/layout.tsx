@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, Noto_Sans_SC } from "next/font/google";
+import { Noto_Sans_SC, Space_Grotesk } from "next/font/google";
 import RouteTransition from "@/components/RouteTransition";
 import "./globals.css";
 
@@ -16,9 +16,12 @@ const notoSansSC = Noto_Sans_SC({
 });
 
 export const metadata: Metadata = {
-  title: "MiraPrep. — 像真实面试一样，练到你拿下 offer",
+  title: "MiraPrep. - 像真实面试一样，练到你拿下 offer",
   description:
-    "上传你的简历，Mira 会像真正的面试官一样，围绕你的经历与目标岗位展开一轮完整、有深度、会追问的仿真面试，并给出结构化评估报告。",
+    "上传你的简历，Mira 会围绕经历与目标岗位展开一轮完整、有深度、会追问的仿真面试，并给出结构化评估报告。",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

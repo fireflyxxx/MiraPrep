@@ -20,22 +20,22 @@ export default function AuthPage() {
 
   return (
     <div className="flex min-h-screen flex-col justify-between px-6 py-10 md:px-14">
-      <Link href="/" transitionTypes={["nav-back"]} className="cursor-pointer">
+      <Link href="/" transitionTypes={["nav-back"]} className="mira-button w-fit cursor-pointer">
         <Logo size="lg" />
       </Link>
 
-      <div className="mx-auto w-full max-w-[380px] py-12">
+      <div className="animate-mira-page-in mx-auto w-full max-w-[380px] py-12">
         <h1 className="m-0 mb-2 text-[30px] font-bold tracking-[-0.02em]">
-          欢迎回来
+          {isRegister ? "创建 MiraPrep 账号" : "欢迎回来"}
         </h1>
         <p className="m-0 mb-8 text-[14.5px] text-[#737373]">
-          登录后继续你的面试准备。
+          {isRegister ? "完成注册后，我们会帮你生成第一套训练配置。" : "登录后继续你的面试准备。"}
         </p>
 
         <div className="mb-[26px] flex rounded-[11px] bg-[#f5f5f5] p-1">
           <button
             onClick={() => setTab("login")}
-            className={`flex-1 rounded-lg py-[9px] text-sm font-medium transition-all ${
+            className={`mira-button flex-1 rounded-lg py-[9px] text-sm font-medium ${
               tab === "login"
                 ? "bg-white text-[#0a0a0a] shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
                 : "bg-transparent text-[#737373]"
@@ -45,7 +45,7 @@ export default function AuthPage() {
           </button>
           <button
             onClick={() => setTab("register")}
-            className={`flex-1 rounded-lg py-[9px] text-sm font-medium transition-all ${
+            className={`mira-button flex-1 rounded-lg py-[9px] text-sm font-medium ${
               tab === "register"
                 ? "bg-white text-[#0a0a0a] shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
                 : "bg-transparent text-[#737373]"
@@ -55,34 +55,34 @@ export default function AuthPage() {
           </button>
         </div>
 
-        {isRegister && (
-          <>
-            <label className="mb-[7px] block text-[13px] font-medium">
-              昵称
-            </label>
-            <input
-              placeholder="你希望 Mira 怎么称呼你"
-              className="mb-4 w-full rounded-[10px] border border-[#e5e5e5] bg-white px-3.5 py-3 text-sm outline-none"
-            />
-          </>
-        )}
+        <div key={tab} className="animate-mira-rise">
+          {isRegister && (
+            <>
+              <label className="mb-[7px] block text-[13px] font-medium">昵称</label>
+              <input
+                placeholder="你希望 Mira 怎么称呼你"
+                className="mira-field mb-4 w-full rounded-[10px] border border-[#e5e5e5] bg-white px-3.5 py-3 text-sm outline-none"
+              />
+            </>
+          )}
 
-        <label className="mb-[7px] block text-[13px] font-medium">邮箱</label>
-        <input
-          placeholder="you@example.com"
-          className="mb-4 w-full rounded-[10px] border border-[#e5e5e5] bg-white px-3.5 py-3 text-sm outline-none"
-        />
+          <label className="mb-[7px] block text-[13px] font-medium">邮箱</label>
+          <input
+            placeholder="you@example.com"
+            className="mira-field mb-4 w-full rounded-[10px] border border-[#e5e5e5] bg-white px-3.5 py-3 text-sm outline-none"
+          />
 
-        <label className="mb-[7px] block text-[13px] font-medium">密码</label>
-        <input
-          type="password"
-          placeholder="••••••••"
-          className="mb-[22px] w-full rounded-[10px] border border-[#e5e5e5] bg-white px-3.5 py-3 text-sm outline-none"
-        />
+          <label className="mb-[7px] block text-[13px] font-medium">密码</label>
+          <input
+            type="password"
+            placeholder="••••••••"
+            className="mira-field mb-[22px] w-full rounded-[10px] border border-[#e5e5e5] bg-white px-3.5 py-3 text-sm outline-none"
+          />
+        </div>
 
         <button
           onClick={handleSubmit}
-          className="mb-4 w-full rounded-[11px] bg-[#0a0a0a] py-[13px] text-[15px] font-medium text-white"
+          className="mira-button mb-4 w-full rounded-[11px] bg-[#0a0a0a] py-[13px] text-[15px] font-medium text-white"
         >
           {isRegister ? "创建账号" : "登录"}
         </button>
@@ -92,10 +92,10 @@ export default function AuthPage() {
           <span className="h-px flex-1 bg-[#eee]" />
         </div>
         <div className="flex gap-2.5">
-          <button className="flex-1 rounded-[10px] border border-[#e5e5e5] bg-white py-[11px] text-[13.5px]">
+          <button className="mira-button flex-1 rounded-[10px] border border-[#e5e5e5] bg-white py-[11px] text-[13.5px]">
             微信登录
           </button>
-          <button className="flex-1 rounded-[10px] border border-[#e5e5e5] bg-white py-[11px] text-[13.5px]">
+          <button className="mira-button flex-1 rounded-[10px] border border-[#e5e5e5] bg-white py-[11px] text-[13.5px]">
             GitHub
           </button>
         </div>

@@ -14,38 +14,45 @@ const dimensions = [
 
 export default function ReportClient({ sessionId }: { sessionId: string }) {
   const [expanded, setExpanded] = useState(false);
+  const [viewedHintIndexes] = useState<Set<number>>(() => {
+    if (typeof window === "undefined") return new Set();
+
+    const raw = window.localStorage.getItem("miraprep:viewed-hints");
+    if (!raw) return new Set();
+
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed)
+        ? new Set(parsed.filter((value) => Number.isInteger(value)))
+        : new Set();
+    } catch {
+      return new Set();
+    }
+  });
   const all = questions.map((qq, i) => ({ n: `Q${i + 1}`, ...qq }));
   const visible = expanded ? all : all.slice(0, 3);
   const hiddenCount = all.length - visible.length;
 
   return (
     <div data-session={sessionId} className="min-h-screen bg-[#fafafa]">
-      <div className="sticky top-0 z-20 flex items-center justify-between border-b border-[#eee] bg-white px-6 py-4 md:px-10">
+      <div className="sticky top-0 z-20 flex items-center justify-between border-b border-[#eee] bg-white/92 px-6 py-4 backdrop-blur-[12px] md:px-10">
         <div className="flex items-center gap-4">
-          <Link
-            href="/dashboard"
-            transitionTypes={["nav-back"]}
-            className="rounded-[9px] border border-[#e5e5e5] bg-white px-3.5 py-2 text-[13px] text-[#525252]"
-          >
+          <Link href="/dashboard" transitionTypes={["nav-back"]} className="mira-button rounded-[9px] border border-[#e5e5e5] bg-white px-3.5 py-2 text-[13px] text-[#525252]">
             ← 工作台
           </Link>
           <Logo size="sm" />
         </div>
         <div className="flex gap-2.5">
-          <button className="rounded-[9px] border border-[#e5e5e5] bg-white px-4 py-2 text-[13px]">
+          <button className="mira-button rounded-[9px] border border-[#e5e5e5] bg-white px-4 py-2 text-[13px]">
             导出 PDF
           </button>
-          <Link
-            href="/interview/setup"
-            transitionTypes={["nav-forward"]}
-            className="rounded-[9px] bg-orange-500 px-4 py-2 text-[13px] font-medium text-white hover:text-white"
-          >
+          <Link href="/interview/setup" transitionTypes={["nav-forward"]} className="mira-button rounded-[9px] bg-orange-500 px-4 py-2 text-[13px] font-medium text-white hover:text-white">
             再练一场
           </Link>
         </div>
       </div>
 
-      <div className="mx-auto max-w-[840px] px-6 pt-10 pb-20 md:px-8">
+      <div className="animate-mira-page-in mx-auto max-w-[840px] px-6 pt-10 pb-20 md:px-8">
         <div className="mb-2 font-display text-[13px] text-[#a3a3a3]">
           INTERVIEW REPORT · 2026.07.05
         </div>
@@ -65,11 +72,8 @@ export default function ReportClient({ sessionId }: { sessionId: string }) {
                   <span>{d.label}</span>
                   <span className="text-[#737373]">{d.note}</span>
                 </div>
-                <div className="h-[7px] rounded-sm bg-[#f2f2f2]">
-                  <div
-                    className={`h-full rounded-sm ${d.active ? "bg-orange-500" : "bg-[#d4d4d4]"}`}
-                    style={{ width: `${d.pct}%` }}
-                  />
+                <div className="h-[7px] overflow-hidden rounded-sm bg-[#f2f2f2]">
+                  <div className={`animate-mira-progress h-full rounded-sm ${d.active ? "bg-orange-500" : "bg-[#d4d4d4]"}`} style={{ width: `${d.pct}%` }} />
                 </div>
               </div>
             ))}
@@ -89,18 +93,24 @@ export default function ReportClient({ sessionId }: { sessionId: string }) {
         </div>
 
         <div className="flex flex-col gap-3.5">
-          {visible.map((item) => (
-            <div key={item.n} className="overflow-hidden rounded-[18px] border border-[#eee] bg-white">
+          {visible.map((item) => {
+            const questionIndex = Number(item.n.slice(1)) - 1;
+            const viewedHint = viewedHintIndexes.has(questionIndex);
+
+            return (
+            <div key={item.n} className="mira-surface animate-mira-soft-pop overflow-hidden rounded-[18px] border border-[#eee] bg-white">
               <div className="flex items-center gap-3.5 border-b border-[#f5f5f5] px-[22px] py-[18px]">
                 <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg bg-[#0a0a0a] font-display text-[13px] text-white">
                   {item.n}
                 </span>
                 <div className="flex-1 text-[14.5px] leading-[1.5] font-medium">{item.q}</div>
                 <div className="shrink-0 text-right">
-                  <span
-                    className="font-display text-[15px] font-semibold"
-                    style={{ color: item.gradeColor }}
-                  >
+                  {viewedHint && (
+                    <div className="mb-1 rounded-full bg-[#fff5ee] px-2.5 py-1 text-[11px] font-medium text-[#9a3412]">
+                      查看过提示
+                    </div>
+                  )}
+                  <span className="font-display text-[15px] font-semibold" style={{ color: item.gradeColor }}>
                     {item.grade}
                   </span>
                   <div className="text-[11.5px] text-[#a3a3a3]">用时 {item.time}</div>
@@ -117,19 +127,20 @@ export default function ReportClient({ sessionId }: { sessionId: string }) {
                 </div>
               </div>
               <div className="border-t border-[#f5f5f5] bg-[#fafafa] px-[22px] py-3.5 text-[13px] leading-relaxed text-[#525252]">
-                <b className="text-[#0a0a0a]">💡 建议：</b>
+                <b className="text-[#0a0a0a]">建议：</b>
                 {item.tip}
               </div>
             </div>
-          ))}
+            );
+          })}
 
           {hiddenCount > 0 && (
-            <div onClick={() => setExpanded(true)} className="cursor-pointer p-2 text-center">
-              <span className="text-[13.5px] text-orange-500">展开其余 {hiddenCount} 题 ↓</span>
+            <div onClick={() => setExpanded(true)} className="mira-button cursor-pointer p-2 text-center">
+              <span className="text-[13.5px] text-orange-500">展开其余 {hiddenCount} 题 →</span>
             </div>
           )}
           {expanded && (
-            <div onClick={() => setExpanded(false)} className="cursor-pointer p-2 text-center">
+            <div onClick={() => setExpanded(false)} className="mira-button cursor-pointer p-2 text-center">
               <span className="text-[13.5px] text-[#a3a3a3]">收起 ↑</span>
             </div>
           )}
