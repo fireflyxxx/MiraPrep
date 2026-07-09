@@ -153,9 +153,9 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="flex min-h-screen flex-col bg-white text-[#0a0a0a]">
-      <div className="flex items-center justify-between border-b border-[#eee] px-5 py-4 md:px-8">
+      <div className="flex items-center justify-between border-b border-[#eee] px-5 py-5 md:px-7">
         <div className="flex items-center gap-3.5">
-          <Logo size="sm" />
+          <Logo />
           <span className="h-[18px] w-px bg-[#e5e5e5]" />
           <div className="text-[13.5px] font-medium">前端工程师 · 中级</div>
         </div>

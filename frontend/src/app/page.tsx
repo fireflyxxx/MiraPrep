@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import LandingNav from "@/components/landing/LandingNav";
 import Logo from "@/components/Logo";
 
@@ -197,21 +197,27 @@ export default function LandingPage() {
       </section>
 
       <section className="mx-auto mt-[110px] max-w-[1180px] px-6 md:px-10">
-        <div className="relative overflow-hidden rounded-[26px] bg-[#0a0a0a] px-8 py-16 md:px-14">
+        <div className="relative overflow-hidden rounded-[26px] border border-[#f2e4d8] bg-gradient-to-br from-[#fffaf6] via-[#fff4ec] to-[#ffece0] px-8 py-16 shadow-[0_30px_80px_-48px_rgba(249,115,22,0.4)] md:px-14">
           <div
-            className="absolute -top-20 -right-10 h-80 w-80"
-            style={{ background: "radial-gradient(circle, rgba(249,115,22,.35), transparent 65%)" }}
+            className="absolute -top-24 -right-16 h-96 w-96"
+            style={{ background: "radial-gradient(circle, rgba(249,115,22,.22), transparent 65%)" }}
           />
-          <div className="relative max-w-[560px]">
-            <h2 className="m-0 mb-[18px] text-[32px] leading-[1.1] font-bold tracking-[-0.02em] text-white md:text-[40px]">
-              下一场面试，
-              <br />
-              别再靠临场发挥。
-            </h2>
-            <p className="m-0 mb-[30px] text-base leading-relaxed text-[#a3a3a3]">
-              现在上传简历，5 分钟内开始你的第一场仿真面试。
-            </p>
-            <Link href="/auth" transitionTypes={["nav-forward"]} className="mira-button inline-block rounded-[11px] bg-orange-500 px-7 py-3.5 text-[15px] font-medium text-white hover:text-white">
+          <div
+            className="absolute -bottom-28 -left-20 h-80 w-80"
+            style={{ background: "radial-gradient(circle, rgba(249,115,22,.10), transparent 68%)" }}
+          />
+          <div className="relative flex flex-col gap-8 md:flex-row md:items-center md:justify-between md:gap-10">
+            <div className="max-w-[560px]">
+              <h2 className="m-0 mb-[18px] text-[32px] leading-[1.1] font-bold tracking-[-0.02em] text-[#0a0a0a] md:text-[40px]">
+                下一场面试，
+                <br />
+                别再靠临场发挥。
+              </h2>
+              <p className="m-0 text-base leading-relaxed text-[#78716c]">
+                现在上传简历，5 分钟内开始你的第一场仿真面试。
+              </p>
+            </div>
+            <Link href="/auth" transitionTypes={["nav-forward"]} className="mira-button inline-block shrink-0 self-start rounded-[11px] bg-orange-500 px-7 py-3.5 text-[15px] font-medium whitespace-nowrap text-white shadow-[0_10px_26px_rgba(249,115,22,0.32)] hover:text-white hover:shadow-[0_14px_32px_rgba(249,115,22,0.4)] md:self-auto">
               免费开始 →
             </Link>
           </div>

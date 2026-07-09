@@ -88,8 +88,9 @@ export default function InterviewSetupPage() {
 
   return (
     <div className="min-h-screen bg-[#fafafa]">
-      <div className="sticky top-0 z-20 flex items-center justify-between border-b border-[#eee] bg-white/92 px-6 py-[18px] backdrop-blur-[12px] md:px-10">
+      <div className="sticky top-0 z-20 flex items-center justify-between border-b border-[#eee] bg-white/92 px-6 py-5 backdrop-blur-[12px] md:px-7">
         <div className="flex items-center gap-4">
+          <Logo />
           <button
             onClick={goBack}
             disabled={preparing}
@@ -97,7 +98,6 @@ export default function InterviewSetupPage() {
           >
             ← 退出
           </button>
-          <Logo size="sm" />
         </div>
         <div className="text-[13px] text-[#a3a3a3]">准备面试 · {stepLabels[step]}</div>
       </div>
