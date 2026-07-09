@@ -35,12 +35,12 @@ export default function ReportClient({ sessionId }: { sessionId: string }) {
 
   return (
     <div data-session={sessionId} className="min-h-screen bg-[#fafafa]">
-      <div className="sticky top-0 z-20 flex items-center justify-between border-b border-[#eee] bg-white/92 px-6 py-4 backdrop-blur-[12px] md:px-10">
+      <div className="sticky top-0 z-20 flex items-center justify-between border-b border-[#eee] bg-white/92 px-6 py-5 backdrop-blur-[12px] md:px-7">
         <div className="flex items-center gap-4">
+          <Logo />
           <Link href="/dashboard" transitionTypes={["nav-back"]} className="mira-button rounded-[9px] border border-[#e5e5e5] bg-white px-3.5 py-2 text-[13px] text-[#525252]">
             ← 工作台
           </Link>
-          <Logo size="sm" />
         </div>
         <div className="flex gap-2.5">
           <button className="mira-button rounded-[9px] border border-[#e5e5e5] bg-white px-4 py-2 text-[13px]">

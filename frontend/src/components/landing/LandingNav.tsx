@@ -19,7 +19,7 @@ export default function LandingNav() {
       <div
         className={`relative flex h-[68px] items-center justify-between px-5 transition-[width,border-radius,background-color,box-shadow,backdrop-filter,border-color] duration-[900ms] ease-[cubic-bezier(.22,1,.36,1)] md:px-9 ${
           scrolled
-            ? "w-[min(980px,calc(100vw-24px))] rounded-[28px] border border-white/55 bg-white/62 shadow-[0_18px_60px_-34px_rgba(10,10,10,.65)] backdrop-blur-[22px]"
+            ? "w-[min(980px,calc(100vw-24px))] rounded-[28px] border border-black/[0.08] bg-white/62 shadow-[0_18px_60px_-34px_rgba(10,10,10,.65)] backdrop-blur-[22px]"
             : "w-full rounded-none border border-transparent bg-white/0 shadow-none backdrop-blur-0"
         }`}
       >

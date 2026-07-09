@@ -19,9 +19,9 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col justify-between px-6 py-10 md:px-14">
+    <div className="flex min-h-screen flex-col justify-between px-7 py-6 md:px-7">
       <Link href="/" transitionTypes={["nav-back"]} className="mira-button w-fit cursor-pointer">
-        <Logo size="lg" />
+        <Logo />
       </Link>
 
       <div className="animate-mira-page-in mx-auto w-full max-w-[380px] py-12">
