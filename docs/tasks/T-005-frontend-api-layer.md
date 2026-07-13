@@ -2,7 +2,7 @@
 
 | 轨道 | 里程碑 | 预估 | 依赖 | 阻塞 |
 |---|---|---|---|---|
-| Frontend | M1 | 1d | T-001 | 所有前端联调任务（011/022/032/042/052/060） |
+| Frontend | M1 | 1d | T-001 | T-011, T-022, T-032, T-042, T-052, T-060, T-061, T-090 |
 
 ## 背景
 前端目前全用 `src/lib/mock-data.ts`，无任何网络层。本任务建立统一的 API 客户端、数据请求（React Query）、鉴权 token 处理与自动刷新，作为后续所有联调的地基。先读 `DEVELOPMENT.md §3/§6/§7.1`。
@@ -36,7 +36,7 @@
 2. 用一个临时页面/测试调用 `apiClient` 打到 T-002 的 `/health`，成功解包。
 3. 模拟 401（可临时 mock）触发刷新流程；刷新失败跳 `/auth`。
 4. React Query DevTools（dev）可见，Provider 生效。
-5. 现有 8 个页面不受影响（回归：预览走通、无 console 报错）。
+5. 现有 10 个页面不受影响（含 `/interviews`、`/practice`；回归：预览走通、无 console 报错）。
 
 ## 验证方式
 PR 贴：临时联通 `/health` 的证据、401 刷新流程说明、`lint`/`build` 结果。

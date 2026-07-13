@@ -3,8 +3,8 @@
 > 本文档是 MiraPrep 项目的工程总纲。任何 agent 在开工前**必须先读本文档**，再读 `docs/tasks/` 下自己被指派的那一份任务文件。
 > 产品需求见 [`MiraPrep-PRD.md`](./MiraPrep-PRD.md)（本文档不重复 PRD 的产品细节，只补充工程实现口径）。
 
-- 文档版本：v1.0
-- 更新日期：2026-07-08
+- 文档版本：v1.1
+- 更新日期：2026-07-10
 - 适用范围：全栈（Next.js 前端 + Spring Boot 业务服务 + FastAPI AI 服务）
 
 ---
@@ -16,9 +16,10 @@
 | 模块 | 位置 | 状态 |
 |---|---|---|
 | 前端脚手架 | `frontend/` | ✅ Next.js 16.2.10 (App Router) + React 19 + Tailwind v4，已初始化 |
-| 前端页面 | `frontend/src/app/**` | ✅ 8 个页面全部按设计稿实现：落地页 `/`、登录 `/auth`、引导 `/onboarding`、工作台 `/dashboard`、面试配置 `/interview/setup`、面试进行 `/interview/[sessionId]`、评级 `/interview/[sessionId]/result`、报告 `/report/[sessionId]` |
+| 前端页面 | `frontend/src/app/**` | ✅ 10 个页面全部按设计稿实现：落地页 `/`、登录 `/auth`、引导 `/onboarding`、工作台 `/dashboard`、我的面试 `/interviews`、题库训练占位 `/practice`、面试配置 `/interview/setup`、面试进行 `/interview/[sessionId]`、评级 `/interview/[sessionId]/result`、报告 `/report/[sessionId]` |
 | 前端数据 | `frontend/src/lib/mock-data.ts` | ⚠️ 全部是写死的 mock 数据，**无任何后端交互**。所有跳转靠 `router.push`，无鉴权 |
 | 页面过渡 | `frontend/src/components/RouteTransition.tsx` + `globals.css` | ✅ View Transitions 已按页面对定制 |
+| 工作台外壳 | `frontend/src/components/dashboard/DashboardShell.tsx` | ✅ `/dashboard`、`/interviews`、`/practice` 共用侧边栏与用户菜单；身份、退出、额度仍为 mock/占位 |
 | Logo | `frontend/src/components/Logo.tsx` | ✅ 含多变体镜面 SVG 图标 |
 | Spring Boot 业务服务 | `backend/`（需自行确定子目录，如 `backend/business`） | ❌ 空目录，未初始化 |
 | FastAPI AI 服务 | `backend/`（如 `backend/ai`） | ❌ 空目录，未初始化 |
@@ -236,7 +237,7 @@ JSON envelope，字段固定：
 
 | 里程碑 | 目标 | 覆盖任务 |
 |---|---|---|
-| **M1 基础闭环** | 认证、Onboarding、工作台（无雷达）、简历上传解析、配置向导、**纯文字面试**、评级+基础报告 | T-001~006（基建）、T-010~012（认证）、T-020~022（简历）、T-030~032（配置/会话）、T-040~042（文字面试）、T-050~052（批改/报告）、T-060（工作台） |
+| **M1 基础闭环** | 认证、Onboarding、工作台首页、我的面试、简历上传解析、配置向导、**纯文字面试**、评级+基础报告 | T-001~006（基建）、T-010~012（认证）、T-020~022（简历）、T-030~032（配置/会话）、T-040~042（文字面试）、T-050~052（批改/报告）、T-060~061（工作台区） |
 | **M2 语音与体验** | 语音 ASR/TTS、面试官动画、深色模式、评级揭晓动效、雷达图 | T-070~074 |
 | **M3 增长与打磨** | 落地页完整版、报告导出/分享、历史对比、重练此题、第三方登录 | T-080~084 |
 | **横切** | 测试/CI、可观测、安全加固 | T-090~092（贯穿各阶段） |
@@ -251,7 +252,7 @@ JSON envelope，字段固定：
 1. 代码符合 §7 约定，`lint` / 编译 / 类型检查通过。
 2. 任务文件「验收标准」全部满足。
 3. 新增/变更的接口在 OpenAPI 里可见，且与任务契约一致。
-4. 有对应的自测证据（后端：至少 happy-path 单测或可复现的 curl 脚本；前端：预览里走通该流程、无 console 报错）。
+4. 有对应的自测证据（后端：新增/变更分支至少有单测或集成测试，并附可复现 curl；前端：数据/交互分支至少有 Vitest + Testing Library 测试，并在预览里走通、无 console 报错）。
 5. 不破坏既有页面/接口（回归自检）。
 6. 更新了必要的 `.env.example` 与 README 说明。
 

@@ -2,7 +2,7 @@
 
 | 轨道 | 里程碑 | 预估 | 依赖 | 阻塞 |
 |---|---|---|---|---|
-| Frontend | M1 | 1.5d | T-005, T-051, T-006 | T-073（动效增强） |
+| Frontend | M1 | 1.5d | T-005, T-006, T-051, T-060 | T-073（动效增强）, T-084 |
 
 ## 背景
 `interview/[sessionId]/result/page.tsx` 与 `components/report/ReportClient.tsx` 目前用 mock。本任务接 T-051 的报告/评级数据，并加雷达图。先读 PRD §3.7/§3.8。
@@ -16,7 +16,7 @@
 
 ## 技术规格
 - 评级页字段对齐 T-051 `GET /reports/{sessionId}`；结果页现有环形评级、stats grid 复用，数据换真实。
-- 报告页：摘要区（评级/总分/岗位/日期/配置回显）、五维雷达（Recharts `RadarChart`，可叠加历史均值——历史均值来自 `GET /stats/overview` 的 radar，作对比）、逐题卡（题目/我的回答/单题分颜色条/耗时对比/参考答案可展开/追问链缩进时间线/改进建议）。
+- 报告页：摘要区（评级/总分/岗位/日期/配置回显）、五维雷达（Recharts `RadarChart`，可叠加历史均值——复用 T-060 的 `useOverviewStats`，读取 `dimensionScores`）、逐题卡（题目/我的回答/单题分颜色条/耗时对比/参考答案可展开/追问链缩进时间线/改进建议）。
 - 评级色用 T-006 的 `grade-*` token。数字用 `tabular-nums`。
 - 骨架屏（PRD §4.6，禁止 CLS）。
 - 保留现有报告页展开/收起与过渡。
