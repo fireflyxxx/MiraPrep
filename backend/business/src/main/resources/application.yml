@@ -23,3 +23,16 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   internal-token: ${AI_INTERNAL_TOKEN:}
+  auth:
+    jwt-secret: ${JWT_SECRET:local-development-secret-must-be-replaced-in-production-12345}
+    access-ttl: ${JWT_ACCESS_TTL:900}
+    refresh-ttl: ${JWT_REFRESH_TTL:1209600}
+    verification:
+      ttl: ${VERIFICATION_CODE_TTL:600}
+      resend-ttl: ${VERIFICATION_CODE_RESEND_TTL:60}
+      max-attempts: ${VERIFICATION_CODE_MAX_ATTEMPTS:5}
+      fixed-code: ${VERIFICATION_FIXED_CODE:}
+    login-window: ${LOGIN_RATE_LIMIT_WINDOW:60}
+    login-max-attempts: ${LOGIN_RATE_LIMIT_MAX_ATTEMPTS:5}
+    token-store: ${AUTH_TOKEN_STORE:redis}
+    rate-limiter: ${AUTH_RATE_LIMITER:redis}

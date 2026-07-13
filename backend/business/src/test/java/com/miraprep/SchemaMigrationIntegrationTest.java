@@ -1,6 +1,7 @@
 package com.miraprep;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.miraprep.domain.ExperienceLevel;
 import com.miraprep.domain.ProfileStatus;
@@ -98,5 +99,25 @@ class SchemaMigrationIntegrationTest {
         assertThat(reloaded.getPreferences()).containsEntry("mockInterview", true).containsEntry("duration", 30);
         assertThat(reloaded.getCreatedAt()).isNotNull();
         assertThat(reloaded.getUpdatedAt()).isNotNull();
+    }
+
+    @Test
+    @Transactional
+    void userEmailUniqueConstraintIsEnforced() {
+        User first = new User();
+        first.setEmail("dup@example.com");
+        first.setPasswordHash("hash");
+        entityManager.persist(first);
+        entityManager.flush();
+
+        User second = new User();
+        second.setEmail("dup@example.com");
+        second.setPasswordHash("hash");
+
+        assertThatThrownBy(() -> {
+                    entityManager.persist(second);
+                    entityManager.flush();
+                })
+                .isInstanceOf(org.hibernate.exception.ConstraintViolationException.class);
     }
 }
