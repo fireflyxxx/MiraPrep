@@ -8,6 +8,7 @@
 2. 把「`../DEVELOPMENT.md` + 该任务的单个 `.md` 文件」一起给 agent，即可开工。
 3. 一个任务 = 一个分支 = 一个 PR，PR 里写 `Closes T-0xx`。
 4. 上游未完成时，下游按任务文件里的「契约」先行开发（mock），联调时替换。
+5. **直接在仓库根目录修改**，不创建或使用 `.worktrees`。Spring Boot 后端任务统一在 `backend` 分支完成，代码直接写入 `backend/business/`。
 
 > 📚 **学习模式**：owner 会一边开发一边学。agent 执行任务时须按 [`LEARNING.md`](./LEARNING.md) 的教学协议边做边教（动手前讲思路、动手后总结）；每个任务对应的知识点见 `LEARNING.md §4`。此为强制要求（见 `../DEVELOPMENT.md §12.1`）。
 
