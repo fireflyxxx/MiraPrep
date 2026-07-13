@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -43,6 +44,7 @@ class BusinessApplicationIntegrationTest {
     }
 
     @Test
+    @WithMockUser
     void businessExceptionReturnsMappedClientError() throws Exception {
         mockMvc.perform(get("/api/v1/test/business-error"))
                 .andExpect(status().isBadRequest())
@@ -52,6 +54,7 @@ class BusinessApplicationIntegrationTest {
     }
 
     @Test
+    @WithMockUser
     void invalidRequestBodyReturnsWrappedClientError() throws Exception {
         mockMvc.perform(post("/api/v1/test/validated")
                         .contentType("application/json")
@@ -75,5 +78,13 @@ class BusinessApplicationIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.status").value("UP"));
+    }
+
+    @Test
+    void openApiDocsAreExposedForSwaggerUi() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.openapi").exists())
+                .andExpect(jsonPath("$.info.title").exists());
     }
 }
