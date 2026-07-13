@@ -5,3 +5,8 @@
 
 # Agent-managed isolated worktrees
 .worktrees/
+
+# Generated Python bytecode and IDE metadata
+**/__pycache__/
+*.py[cod]
+**/.idea/

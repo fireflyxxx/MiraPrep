@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: miraprep-business
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/miraprep}
+    username: ${DB_USER:miraprep}
+    password: ${DB_PASSWORD:change-me-mysql-password}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+
+server:
+  port: 8080
+
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  internal-token: ${AI_INTERNAL_TOKEN:}

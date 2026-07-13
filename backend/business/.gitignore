@@ -1,0 +1,4 @@
+/.gradle/
+/build/
+# machine-local JDK pin (see gradle.properties: org.gradle.java.home)
+/gradle.properties
