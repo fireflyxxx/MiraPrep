@@ -21,7 +21,13 @@
   {
     "grade":"A-|A|B+...",         // 或 S/A/B/C/D，与 PRD 一致：本项目沿用 S/A/B/C/D（含 +/- 细分可选）
     "totalScore": 82,
-    "dimensionScores": {"专业知识":78,"项目深度":88,"表达逻辑":80,"临场应变":74,"岗位匹配度":76},
+    "dimensionScores": {
+      "professionalKnowledge":78,
+      "projectDepth":88,
+      "communicationLogic":80,
+      "adaptability":74,
+      "jobFit":76
+    },
     "summary": "一句话/一段总评",
     "highlights": ["...","...","..."],
     "weaknesses": ["...","...","..."],
@@ -33,8 +39,9 @@
   ```
 - 参考答案要**结合用户简历项目**（把 parsedJson 作为不可信数据引用）。
 - 五维由逐题得分按 `focusPoints` 映射聚合；总分按 `types` 配置加权；评级按阈值。
+- 五维键名是跨 FastAPI、Spring 和前端冻结的稳定契约；中文展示名仅由前端映射，接口中不得使用中文键或另一套四维模型。
 - 未完成：`partial=true`，已答部分正常批改，报告标注，不计趋势。
-- 回调：`POST {business_callback_url}/interviews/{sessionId}/grade-result` body=上面 schema，内部 token，失败重试 + 队列（可靠性，PRD §6.5）。
+- 成功回调：`POST {business_callback_url}/interviews/{sessionId}/grade-result` body=上面 schema，内部 token，失败重试 + 队列（可靠性，PRD §6.5）。批改任务自身连续重试耗尽后，回调 `POST {business_callback_url}/interviews/{sessionId}/grade-failed` body `{errorCode,errorMessage}`，供 Spring 持久化可恢复的失败状态；回调投递失败仍按队列策略重试。
 - Prompt 放 `app/prompts/grading.py`；批改可用更强模型（`claude-opus-4-8`，从配置读）。
 
 ## 涉及文件
@@ -48,7 +55,7 @@
 2. 参考答案确实结合简历项目，非通用模板。
 3. 五维聚合与总分/评级映射符合 PRD 阈值。
 4. 未完成面试走 partial 分支并标注。
-5. 回调 Spring 成功（mock 验证 payload）；失败重试。
+5. 成功与“批改重试耗尽”两种回调均有 mock 验证；回调投递失败会重试。
 6. 内部 token + 防注入生效。
 
 ## 验证方式

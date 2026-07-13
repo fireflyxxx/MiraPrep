@@ -2,7 +2,7 @@
 
 | 轨道 | 里程碑 | 预估 | 依赖 | 阻塞 |
 |---|---|---|---|---|
-| Frontend | M1 | 1.5d | —（可与 T-005 并行） | T-052, T-073, T-074, T-080 |
+| Frontend | M1 | 2d | — | T-052, T-060, T-061, T-073, T-074, T-080 |
 
 ## 背景
 现有页面里颜色/圆角/间距大量是内联硬编码（如 `#f97316`、`#0a0a0a`、`bg-[#fafafa]`）。PRD §4 要求语义化 token、深色模式、shadcn/ui 组件体系。本任务把设计体系正规化，但**保持现有视觉不回退**。先读 PRD §4 全节。
@@ -11,7 +11,7 @@
 建立 Tailwind v4 语义 token（`background/surface/border/foreground/muted/primary/success/warning/danger` + 评级色），接入 `next-themes` 深色模式与 shadcn/ui 基础组件，把现有页面的高频硬编码色替换为 token（渐进式，先覆盖工作台/报告/评级等应用内页面）。
 
 ## 范围
-- **做**：在 `globals.css` 的 `@theme` 定义语义 token（含深浅两套，用 `prefers-color-scheme` + `.dark` class）、接 `next-themes`（跟随系统 + 手动切换）、初始化 shadcn/ui（Button/Input/Dialog/Tabs/Select/Toast/Skeleton/Card 等基础件）、提供 `ThemeToggle` 组件、把应用内页面（dashboard/report/result/setup）的核心硬编码色迁到 token。
+- **做**：在 `globals.css` 的 `@theme` 定义语义 token（含深浅两套，用 `prefers-color-scheme` + `.dark` class）、接 `next-themes`（跟随系统 + 手动切换）、初始化 shadcn/ui（Button/Input/Dialog/Tabs/Select/Toast/Skeleton/Card 等基础件）、提供 `ThemeToggle` 组件、把应用内页面（dashboard/interviews/practice/report/result/setup）和 `DashboardShell` 的核心硬编码色迁到 token。
 - **不做**：不重排版面、不改交互逻辑；面试进行页的深色主题细节留给 T-073；落地页大改留给 T-080（本任务只做 token 化不动结构）。
 
 ## 技术规格
@@ -26,7 +26,7 @@
 - 修改 `src/app/globals.css`（`@theme` token、深色变量）
 - 修改 `src/app/layout.tsx`（`ThemeProvider`）
 - 新增 `src/components/ui/*`（shadcn 生成）、`src/components/ThemeToggle.tsx`
-- 渐进修改 `src/app/dashboard/page.tsx`、`report/*`、`interview/[sessionId]/result/page.tsx`、`interview/setup/page.tsx`（色值 → token）
+- 渐进修改 `src/components/dashboard/DashboardShell.tsx`、`src/app/{dashboard,interviews,practice}/page.tsx`、`report/*`、`interview/[sessionId]/result/page.tsx`、`interview/setup/page.tsx`（色值 → token）
 - `components.json`（shadcn 配置）
 
 ## 验收标准
@@ -34,7 +34,7 @@
 2. 深浅模式切换正常，跟随系统 + 手动切换；切换无闪烁、无布局跳动。
 3. 迁移后的页面在浅色模式视觉与现状一致（对比截图无回退）；深色模式可用、无对比度问题。
 4. shadcn 基础组件可用（至少 Button/Dialog/Tabs/Toast/Skeleton 有 demo 验证）。
-5. 现有 8 页面在两种主题下都能正常渲染，View Transitions 不受影响。
+5. 现有 10 页面在两种主题下都能正常渲染，`DashboardShell` 菜单与 View Transitions 不受影响。
 
 ## 验证方式
 PR 贴：浅色/深色各页面截图对比、主题切换录屏或分步截图、`lint`/`build` 结果。

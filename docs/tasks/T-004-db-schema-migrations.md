@@ -19,7 +19,7 @@
 - `user`(id, email[uniq], password_hash, nickname, avatar, is_first_login, created_at, updated_at)
 - `user_profile`(user_id[uniq FK], job_direction, tech_stacks(JSON), experience_level, status, target_company, preferences(JSON), updated_at)
 - `resume`(id, user_id[FK], file_url, file_name, file_size, page_count, parsed_json(JSON,nullable), parse_status[pending|success|failed], is_default, deleted, created_at, updated_at) — 索引 (user_id, deleted)
-- `interview_session`(id, user_id[FK], resume_id[FK], job_direction, job_title, jd_text(TEXT), difficulty, types(JSON), duration_min, custom_requirements(TEXT), interviewer_style, status[created|ongoing|completed|aborted], outline_status[pending|ready|failed], started_at, ended_at, deleted, created_at, updated_at) — 索引 (user_id, status)
+- `interview_session`(id, user_id[FK], resume_id[FK], job_direction, job_title, jd_text(TEXT), difficulty, types(JSON), duration_min, custom_requirements(TEXT), interviewer_style, status[created|ongoing|completed|aborted], outline_status[pending|ready|failed], grading_status[none|pending|ready|failed], grading_error(TEXT,nullable), started_at, ended_at, deleted, created_at, updated_at) — 索引 (user_id, status)
 - `interview_message`(id, session_id[FK], role[interviewer|candidate], content(TEXT), audio_url, phase, question_id, seq, created_at) — 索引 (session_id, seq)
 - `question`(id, session_id[FK], phase, text(TEXT), focus_points(JSON), sort_order, think_seconds, answer_seconds, suggested_seconds, skipped, created_at) — 索引 (session_id, sort_order)
 - `report`(id, session_id[uniq FK], grade, total_score, dimension_scores(JSON), summary(TEXT), highlights(JSON), weaknesses(JSON), partial, created_at)
