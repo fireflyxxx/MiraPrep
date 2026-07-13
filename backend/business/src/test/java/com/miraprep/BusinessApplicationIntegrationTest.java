@@ -25,9 +25,10 @@ class BusinessApplicationIntegrationTest {
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.flyway.enabled", () -> false);
         registry.add("spring.datasource.url", () -> "jdbc:h2:mem:miraprep;MODE=MySQL;DB_CLOSE_DELAY=-1");
-        registry.add("spring.jpa.hibernate.ddl-auto", () -> "none");
+        registry.add("spring.datasource.driver-class-name", () -> "org.h2.Driver");
+        registry.add("spring.datasource.username", () -> "sa");
+        registry.add("spring.datasource.password", () -> "");
         registry.add("spring.data.redis.repositories.enabled", () -> false);
         registry.add("app.internal-token", () -> "test-internal-token");
     }
