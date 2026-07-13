@@ -204,8 +204,9 @@ JSON envelope，字段固定：
 - 命名：REST 路径 kebab/复数名词；DB 表 snake_case；前端组件 PascalCase 文件。
 
 ### 7.4 Git / 分支
-- 主分支 `main`；集成分支 `frontend`（当前前端工作）。后端建议 `backend/business`、`backend/ai` 或按任务开 `feat/T-0xx-slug`。
-- 每个任务一个分支、一个 PR，PR 描述里引用任务号（如 `Closes T-020`）。
+- **禁止创建、切换或使用新 Git 分支与 Git worktree。** Agent 必须在用户当前检出的工作区内完成任务；不得执行 `git switch -c`、`git checkout -b`、`git branch`、`git worktree add` 等创建或切换分支的操作。
+- 前端实现只允许写入 `frontend/`，后端实现只允许写入 `backend/`（分别使用 `backend/business/` 和 `backend/ai/`）。任务需要文档改动时，仅修改任务明确指定的文档；不得借机扩大到其他目录。
+- 未经用户明确要求，不得提交、推送、合并或创建 PR。
 - 提交信息祈使句、说明「为什么」；不擅自 `push`/合并，除非任务明确要求。
 
 ### 7.5 安全底线（所有涉及后端/LLM 的任务都要遵守）

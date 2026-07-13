@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Logo from "@/components/Logo";
+import AuthGuard from "@/components/AuthGuard";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { useMeQuery, useMyProfileQuery } from "@/lib/api/auth";
+import { clearAuthTokens, useAuthToken } from "@/lib/api/auth-token";
 
 const navItems = [
   { label: "工作台", href: "/dashboard" },
@@ -14,8 +18,24 @@ const navItems = [
 
 export default function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const { token } = useAuthToken();
   const [menuOpen, setMenuOpen] = useState(false);
   const userRef = useRef<HTMLDivElement>(null);
+  const { data: user } = useMeQuery(Boolean(token));
+  const { data: profile } = useMyProfileQuery(Boolean(token));
+  const nickname = user?.nickname?.trim() || "Mira 用户";
+  const email = user?.email ?? "正在加载账号资料";
+  const jobDirection = profile?.jobDirection?.trim() || "正在完善职业方向";
+  const initial = nickname.slice(0, 1).toUpperCase();
+
+  const handleLogout = () => {
+    clearAuthTokens();
+    queryClient.clear();
+    setMenuOpen(false);
+    router.replace("/auth");
+  };
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -34,6 +54,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   }, [menuOpen]);
 
   return (
+    <AuthGuard>
     <div className="grid min-h-screen grid-cols-1 bg-surface-subtle md:grid-cols-[248px_1fr]">
       <aside className="sticky top-0 hidden h-screen flex-col border-r border-border-subtle bg-surface p-[18px] md:flex">
         <Link href="/" className="mira-button mb-[26px] px-2.5 py-1.5">
@@ -75,28 +96,18 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             <div className="animate-mira-soft-pop absolute bottom-[calc(100%+10px)] left-0 w-full min-w-[232px] overflow-hidden rounded-[16px] border border-border bg-surface p-2 shadow-[0_24px_60px_-22px_rgba(0,0,0,0.3)]">
               <div className="flex items-center gap-2.5 px-2.5 py-2">
                 <span className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full bg-orange-500 text-sm font-semibold text-white">
-                  王
+                  {initial}
                 </span>
                 <div className="min-w-0">
-                  <div className="truncate text-[13.5px] font-medium">王同学</div>
-                  <div className="truncate text-[11.5px] text-muted-foreground">wang@example.com</div>
+                  <div className="truncate text-[13.5px] font-medium">{nickname}</div>
+                  <div className="truncate text-[11.5px] text-muted-foreground">{email}</div>
                 </div>
               </div>
 
               <div className="mx-1 mt-1.5 mb-1 rounded-[12px] bg-surface-subtle px-3 py-2.5">
-                <div className="flex items-center justify-between text-[12px]">
-                  <span className="text-muted-foreground">本月可用额度</span>
-                  <span className="font-display font-medium text-foreground">3 / 5 场</span>
-                </div>
-                <div className="mt-2 h-[6px] w-full overflow-hidden rounded-full bg-border">
-                  <div className="h-full w-[60%] rounded-full bg-orange-500" />
-                </div>
-                <div className="mt-2 flex items-center justify-between">
-                  <span className="text-[11px] text-muted-foreground">免费版 · 每月 5 场</span>
-                  <span className="cursor-pointer text-[11px] font-medium text-primary hover:underline">
-                    升级
-                  </span>
-                </div>
+                <div className="text-[12px] text-muted-foreground">账号资料</div>
+                <div className="mt-1.5 text-[13px] font-medium text-foreground">{jobDirection}</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">训练额度将在接入计费服务后显示</div>
               </div>
 
               <div className="my-1 h-px bg-muted" />
@@ -112,13 +123,14 @@ export default function DashboardShell({ children }: { children: React.ReactNode
 
               <div className="my-1 h-px bg-muted" />
 
-              <Link
-                href="/auth"
-                className="mira-button flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-[13px] text-foreground hover:bg-surface-subtle"
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="mira-button flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[13px] text-foreground hover:bg-surface-subtle"
               >
                 <span className="h-[6px] w-[6px] rounded-[2px] border-[1.5px] border-muted-foreground" />
                 退出登录
-              </Link>
+              </button>
             </div>
           )}
 
@@ -129,11 +141,11 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             }`}
           >
             <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-orange-500 text-sm font-semibold text-white">
-              王
+              {initial}
             </span>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[13.5px] font-medium">王同学</div>
-              <div className="truncate text-[11.5px] text-muted-foreground">前端工程师 · 免费版</div>
+              <div className="truncate text-[13.5px] font-medium">{nickname}</div>
+              <div className="truncate text-[11.5px] text-muted-foreground">{jobDirection}</div>
             </div>
             <svg
               width="14"
@@ -153,5 +165,6 @@ export default function DashboardShell({ children }: { children: React.ReactNode
         {children}
       </main>
     </div>
+    </AuthGuard>
   );
 }

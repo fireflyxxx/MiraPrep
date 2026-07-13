@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Logo from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import AuthGuard from "@/components/AuthGuard";
 import {
   configDiffCards,
   configDurations,
@@ -88,6 +89,7 @@ export default function InterviewSetupPage() {
   };
 
   return (
+    <AuthGuard>
     <div className="min-h-screen bg-surface-subtle">
       <div className="sticky top-0 z-20 flex items-center justify-between border-b border-border-subtle bg-surface/92 px-6 py-5 backdrop-blur-[12px] md:px-7">
         <div className="flex items-center gap-4">
@@ -261,5 +263,6 @@ export default function InterviewSetupPage() {
         </div>
       )}
     </div>
+    </AuthGuard>
   );
 }

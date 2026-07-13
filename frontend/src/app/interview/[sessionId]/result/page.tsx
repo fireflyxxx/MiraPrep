@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import AuthGuard from "@/components/AuthGuard";
 
 export default async function InterviewResultPage({
   params,
@@ -9,6 +10,7 @@ export default async function InterviewResultPage({
   const { sessionId } = await params;
 
   return (
+    <AuthGuard>
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-6 py-8 text-foreground">
       <div className="absolute top-6 right-6 z-10"><ThemeToggle /></div>
       <div
@@ -69,5 +71,6 @@ export default async function InterviewResultPage({
         </div>
       </div>
     </div>
+    </AuthGuard>
   );
 }

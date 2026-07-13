@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { clearAccessToken, getAccessToken, setAccessToken } from "./auth-token";
+import {
+  clearAuthTokens,
+  getAccessToken,
+  getRefreshToken,
+  setAuthTokens,
+} from "./auth-token";
 import { endpoints, toApiUrl } from "./endpoints";
 import { ApiError, type ApiResponse } from "./types";
 
@@ -69,13 +74,20 @@ function toApiError(envelope: ApiResponse<unknown>, status: number): ApiError {
   return new ApiError(envelope.code, envelope.message, status);
 }
 
-async function refreshAccessToken(): Promise<void> {
+export async function refreshAccessToken(): Promise<void> {
   if (!refreshPromise) {
     refreshPromise = (async () => {
+      const refreshToken = getRefreshToken();
+      if (!refreshToken) {
+        throw new ApiError(40102, "登录已过期", 401);
+      }
+
+      const body = JSON.stringify({ refreshToken });
       const response = await fetch(toApiUrl(endpoints.refresh), {
         method: "POST",
         credentials: "include",
-        headers: buildHeaders({}, false),
+        headers: buildHeaders({ body }, false),
+        body,
       });
       const envelope = await parseEnvelope(response);
 
@@ -83,11 +95,16 @@ async function refreshAccessToken(): Promise<void> {
         throw toApiError(envelope, response.status);
       }
 
-      const data = envelope.data as { accessToken?: unknown };
-      if (typeof data?.accessToken !== "string" || !data.accessToken) {
+      const data = envelope.data as { accessToken?: unknown; refreshToken?: unknown };
+      if (
+        typeof data?.accessToken !== "string" ||
+        !data.accessToken ||
+        typeof data?.refreshToken !== "string" ||
+        !data.refreshToken
+      ) {
         throw new ApiError(40101, "刷新登录状态失败", response.status);
       }
-      setAccessToken(data.accessToken);
+      setAuthTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken });
     })().finally(() => {
       refreshPromise = null;
     });
@@ -125,7 +142,7 @@ async function request<T>(
       await refreshAccessToken();
       return request<T>(path, options, true);
     } catch (error) {
-      clearAccessToken();
+      clearAuthTokens();
       redirectToAuth();
       throw error;
     }

@@ -6,9 +6,9 @@
 
 1. 按下面「推荐执行顺序」从上往下派单。标了相同「波次」的任务可并行给不同 agent。
 2. 把「`../DEVELOPMENT.md` + 该任务的单个 `.md` 文件」一起给 agent，即可开工。
-3. 一个任务 = 一个分支 = 一个 PR，PR 里写 `Closes T-0xx`。
+3. **严禁创建、切换或使用任何新 Git 分支、临时分支或 worktree。** 所有任务直接在当前检出的工作区完成；不得为了隔离任务执行 `git switch -c`、`git checkout -b`、`git worktree add` 等命令。
 4. 上游未完成时，下游按任务文件里的「契约」先行开发（mock），联调时替换。
-5. **直接在仓库根目录修改**，不创建或使用 `.worktrees`。Spring Boot 后端任务统一在 `backend` 分支完成，代码直接写入 `backend/business/`。
+5. **严格按代码目录工作**：前端任务只能修改 `frontend/`；后端任务只能修改 `backend/`（Spring Boot 写入 `backend/business/`，FastAPI 写入 `backend/ai/`）。除任务明确要求的文档外，不得在这两个目录之外新增实现代码。
 
 > 📚 **学习模式**：owner 会一边开发一边学。agent 执行任务时须按 [`LEARNING.md`](./LEARNING.md) 的教学协议边做边教（动手前讲思路、动手后总结）；每个任务对应的知识点见 `LEARNING.md §4`。此为强制要求（见 `../DEVELOPMENT.md §12.1`）。
 
