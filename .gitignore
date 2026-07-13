@@ -1,0 +1,7 @@
+# Local credentials and machine-specific endpoint overrides
+**/.env
+**/.env.local
+!**/.env.example
+
+# Agent-managed isolated worktrees
+.worktrees/
