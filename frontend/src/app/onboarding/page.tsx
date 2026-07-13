@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import AuthGuard from "@/components/AuthGuard";
 import { experienceOptions, onboardJobs, skillOptions } from "@/lib/mock-data";
 
 function cardClass(selected: boolean) {
@@ -34,6 +35,7 @@ export default function OnboardingPage() {
   };
 
   return (
+    <AuthGuard>
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#f7f7f7] p-6 md:p-8">
       <div aria-hidden className="pointer-events-none absolute inset-0 opacity-50 blur-[2px]">
         <div className="mx-auto mt-[60px] max-w-[900px] px-10">
@@ -133,5 +135,6 @@ export default function OnboardingPage() {
         </div>
       </div>
     </div>
+    </AuthGuard>
   );
 }

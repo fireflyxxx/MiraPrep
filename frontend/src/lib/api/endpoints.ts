@@ -17,7 +17,12 @@ export const aiStreamUrl = trimTrailingSlash(
 
 export const endpoints = {
   health: "/health",
+  login: "/auth/login",
+  register: "/auth/register",
   refresh: "/auth/refresh",
+  sendCode: "/auth/send-code",
+  me: "/users/me",
+  myProfile: "/users/me/profile",
 } as const;
 
 export function toApiUrl(path: string): string {

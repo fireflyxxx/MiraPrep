@@ -1,4 +1,5 @@
 import ReportClient from "@/components/report/ReportClient";
+import AuthGuard from "@/components/AuthGuard";
 
 export default async function ReportPage({
   params,
@@ -6,5 +7,5 @@ export default async function ReportPage({
   params: Promise<{ sessionId: string }>;
 }) {
   const { sessionId } = await params;
-  return <ReportClient sessionId={sessionId} />;
+  return <AuthGuard><ReportClient sessionId={sessionId} /></AuthGuard>;
 }

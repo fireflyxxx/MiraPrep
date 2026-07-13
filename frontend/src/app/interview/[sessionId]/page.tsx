@@ -1,4 +1,5 @@
 import InterviewClient from "@/components/interview/InterviewClient";
+import AuthGuard from "@/components/AuthGuard";
 
 export default async function InterviewPage({
   params,
@@ -6,5 +7,5 @@ export default async function InterviewPage({
   params: Promise<{ sessionId: string }>;
 }) {
   const { sessionId } = await params;
-  return <InterviewClient sessionId={sessionId} />;
+  return <AuthGuard><InterviewClient sessionId={sessionId} /></AuthGuard>;
 }

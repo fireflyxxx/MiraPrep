@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "./client";
-import { clearAccessToken, setAccessToken } from "./auth-token";
+import { clearAuthTokens, setAccessToken, setAuthTokens } from "./auth-token";
 import { ApiError } from "./types";
 
 const apiUrl = "http://localhost:8080/api/v1";
@@ -14,7 +14,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 describe("apiClient", () => {
   afterEach(() => {
-    clearAccessToken();
+    clearAuthTokens();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -55,15 +55,17 @@ describe("apiClient", () => {
   });
 
   it("uses one refresh request for concurrent 401 responses and retries both requests", async () => {
-    setAccessToken("expired-token");
+    setAuthTokens({ accessToken: "expired-token", refreshToken: "refresh-token" });
     let refreshCalls = 0;
     const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
       if (input === `${apiUrl}/auth/refresh`) {
         refreshCalls += 1;
+        expect(init?.body).toBe(JSON.stringify({ refreshToken: "refresh-token" }));
+        expect(new Headers(init?.headers).get("Content-Type")).toBe("application/json");
         return jsonResponse({
           code: 0,
           message: "ok",
-          data: { accessToken: "fresh-token" },
+          data: { accessToken: "fresh-token", refreshToken: "next-refresh-token" },
         });
       }
 

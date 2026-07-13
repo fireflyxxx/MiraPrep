@@ -26,6 +26,11 @@ def test_internal_ping_accepts_matching_token() -> None:
     assert response.json() == {"status": "UP"}
 
 
+def test_openapi_docs_are_served() -> None:
+    assert client.get("/docs").status_code == 200
+    assert client.get("/openapi.json").json()["info"]["title"] == "MiraPrep AI Service"
+
+
 def test_unhandled_errors_have_request_id_and_error_envelope() -> None:
     @app.get("/_test/boom")
     async def boom() -> None:

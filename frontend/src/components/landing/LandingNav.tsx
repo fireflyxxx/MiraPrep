@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Logo from "@/components/Logo";
+import { useAuthToken } from "@/lib/api/auth-token";
 
 export default function LandingNav() {
   const [scrolled, setScrolled] = useState(false);
+  const { token } = useAuthToken();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 16);
@@ -41,11 +43,11 @@ export default function LandingNav() {
 
         <div className="z-10 flex items-center gap-2 md:gap-3">
           <Link
-            href="/auth"
+            href={token ? "/dashboard" : "/auth"}
             transitionTypes={["nav-forward"]}
             className="mira-button rounded-[11px] px-4 py-[9px] text-sm text-[#0a0a0a] hover:bg-white/65 hover:text-[#0a0a0a]"
           >
-            登录
+            {token ? "进入工作台" : "登录"}
           </Link>
           <Link
             href="/auth"
