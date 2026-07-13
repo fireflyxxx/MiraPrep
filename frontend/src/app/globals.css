@@ -1,15 +1,156 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 :root {
+  --surface: #ffffff;
+  --surface-subtle: #fafafa;
+  --border: #e5e5e5;
+  --border-subtle: #eeeeee;
+  --muted: #f5f5f5;
+  --muted-foreground: #737373;
+  --primary: #f97316;
+  --primary-foreground: #ffffff;
+  --primary-soft: #fff5ee;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --grade-s: #16a34a;
+  --grade-a: #f97316;
+  --grade-b: #eab308;
+  --grade-c: #64748b;
+  --grade-d: #dc2626;
   --background: #ffffff;
   --foreground: #0a0a0a;
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
+  --popover: var(--surface);
+  --popover-foreground: var(--foreground);
+  --secondary: var(--muted);
+  --secondary-foreground: var(--foreground);
+  --accent: var(--muted);
+  --accent-foreground: var(--foreground);
+  --destructive: var(--danger);
+  --input: var(--border);
+  --ring: var(--primary);
+  --chart-1: var(--primary);
+  --chart-2: var(--success);
+  --chart-3: var(--warning);
+  --chart-4: var(--grade-c);
+  --chart-5: var(--danger);
+  --radius: 0.625rem;
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--muted);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--primary);
+}
+
+:root[data-theme="dark"] {
+  --background: #111111;
+  --foreground: #fafafa;
+  --surface: #1b1b1b;
+  --surface-subtle: #171717;
+  --border: #343434;
+  --border-subtle: #292929;
+  --muted: #262626;
+  --muted-foreground: #a3a3a3;
+  --primary: #fb923c;
+  --primary-foreground: #171717;
+  --primary-soft: #3a2114;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --grade-s: #4ade80;
+  --grade-a: #fb923c;
+  --grade-b: #facc15;
+  --grade-c: #94a3b8;
+  --grade-d: #f87171;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --background: #111111;
+    --foreground: #fafafa;
+    --surface: #1b1b1b;
+    --surface-subtle: #171717;
+    --border: #343434;
+    --border-subtle: #292929;
+    --muted: #262626;
+    --muted-foreground: #a3a3a3;
+    --primary: #fb923c;
+    --primary-foreground: #171717;
+    --primary-soft: #3a2114;
+    --success: #4ade80;
+    --warning: #fbbf24;
+    --danger: #f87171;
+    --grade-s: #4ade80;
+    --grade-a: #fb923c;
+    --grade-b: #facc15;
+    --grade-c: #94a3b8;
+    --grade-d: #f87171;
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-grade-s: var(--grade-s);
+  --color-grade-a: var(--grade-a);
+  --color-grade-b: var(--grade-b);
+  --color-grade-c: var(--grade-c);
+  --color-grade-d: var(--grade-d);
   --font-sans: var(--font-noto-sans-sc);
   --font-display: var(--font-space-grotesk);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 * {
@@ -22,28 +163,35 @@ html {
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 @layer base {
   a {
-    color: #ea580c;
+    color: var(--primary);
     text-decoration: none;
   }
   a:hover {
-    color: #c2410c;
+    color: color-mix(in srgb, var(--primary) 80%, var(--foreground));
   }
   button:not(:disabled) {
     cursor: pointer;
   }
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
 }
 
 ::selection {
-  background: #f97316;
-  color: #fff;
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 
 ::-webkit-scrollbar {
@@ -51,9 +199,9 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #e5e5e5;
+  background: var(--border);
   border-radius: 8px;
-  border: 2px solid #fff;
+  border: 2px solid var(--surface);
 }
 
 @keyframes mira-float {
@@ -164,8 +312,8 @@ body {
 }
 
 .mira-field:focus {
-  border-color: #f97316;
-  box-shadow: 0 0 0 4px rgba(249, 115, 22, .12);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 12%, transparent);
 }
 
 .mira-stagger > * {

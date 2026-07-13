@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Noto_Sans_SC, Space_Grotesk } from "next/font/google";
 import RouteTransition from "@/components/RouteTransition";
+import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
+import QueryProvider from "@/lib/api/query-provider";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -33,9 +36,20 @@ export default function RootLayout({
     <html
       lang="zh"
       className={`${spaceGrotesk.variable} ${notoSansSC.variable}`}
+      suppressHydrationWarning
     >
-      <body className="min-h-screen bg-white font-sans text-[#0a0a0a] antialiased">
-        <RouteTransition>{children}</RouteTransition>
+      <body className="min-h-screen bg-background font-sans text-foreground antialiased">
+        <ThemeProvider
+          attribute="data-theme"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <QueryProvider>
+            <RouteTransition>{children}</RouteTransition>
+          </QueryProvider>
+          <Toaster richColors closeButton />
+        </ThemeProvider>
       </body>
     </html>
   );
