@@ -72,6 +72,21 @@ npm run start        # 运行生产构建
 npm run lint         # 代码检查
 ```
 
+### 本地开发环境
+
+完整启动顺序见 [工程开发总纲 §5](docs/DEVELOPMENT.md#5-本地开发环境)。先启动基础设施：
+
+```bash
+cd infra
+cp .env.example .env
+docker compose up -d
+docker compose ps
+```
+
+Windows PowerShell 可用 `Copy-Item .env.example .env` 代替 `cp`。服务地址：MySQL `localhost:3306`、Redis `localhost:6379`、MinIO API `http://localhost:9000`、MinIO Console `http://localhost:9001`。MinIO 的登录账号来自 `infra/.env`；初始化完成后会自动创建私有 `miraprep` bucket。
+
+`docker compose down` 只停止并删除容器，不删除命名数据卷；再次 `up -d` 会保留 MySQL、Redis 和 MinIO 数据。需要彻底重置本地数据时，确认无保留需求后执行 `docker compose down -v`。
+
 ## 🧭 路由一览
 
 | 路由 | 页面 | 状态 |
