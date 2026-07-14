@@ -11,9 +11,15 @@ class LlmClient:
 
     def __init__(self, settings: Settings, client: Any | None = None) -> None:
         self._settings = settings
-        self._client = client or AsyncAnthropic(
-            api_key=settings.anthropic_api_key.get_secret_value()
-        )
+        self._owns_client = client is None
+        client_options: dict[str, str] = {"api_key": settings.anthropic_api_key.get_secret_value()}
+        if settings.anthropic_base_url:
+            client_options["base_url"] = settings.anthropic_base_url
+        self._client = client or AsyncAnthropic(**client_options)
+
+    async def aclose(self) -> None:
+        if self._owns_client:
+            await self._client.close()
 
     async def complete(
         self,
@@ -24,7 +30,7 @@ class LlmClient:
     ) -> str:
         request: dict[str, Any] = {
             "model": model or self._settings.anthropic_model,
-            "max_tokens": 1024,
+            "max_tokens": self._settings.anthropic_max_tokens,
             "messages": messages,
         }
         if system:
@@ -41,7 +47,7 @@ class LlmClient:
     ) -> AsyncIterator[str]:
         request: dict[str, Any] = {
             "model": model or self._settings.anthropic_model,
-            "max_tokens": 1024,
+            "max_tokens": self._settings.anthropic_max_tokens,
             "messages": messages,
             "stream": True,
         }

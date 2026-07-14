@@ -11,6 +11,8 @@ class Settings(BaseSettings):
 
     anthropic_api_key: SecretStr
     anthropic_model: str = "claude-sonnet-5"
+    anthropic_base_url: str | None = None
+    anthropic_max_tokens: int = 4096
     business_callback_url: str
     internal_token: SecretStr
     redis_host: str = "localhost"
