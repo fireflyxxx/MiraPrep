@@ -4,6 +4,8 @@ import org.springframework.http.HttpStatus;
 
 public enum ErrorCode {
     INVALID_PARAM(40000, HttpStatus.BAD_REQUEST, "invalid parameter"),
+    INVALID_FILE_TYPE(40001, HttpStatus.BAD_REQUEST, "invalid file type"),
+    FILE_TOO_LARGE(40002, HttpStatus.BAD_REQUEST, "file too large"),
     UNAUTHORIZED(40100, HttpStatus.UNAUTHORIZED, "unauthorized"),
     INVALID_CREDENTIALS(40101, HttpStatus.UNAUTHORIZED, "invalid credentials"),
     INVALID_REFRESH_TOKEN(40102, HttpStatus.UNAUTHORIZED, "invalid refresh token"),
@@ -11,6 +13,7 @@ public enum ErrorCode {
     NOT_FOUND(40400, HttpStatus.NOT_FOUND, "not found"),
     LOGIN_RATE_LIMITED(42900, HttpStatus.TOO_MANY_REQUESTS, "too many login attempts"),
     VERIFICATION_CODE_TOO_FREQUENT(42901, HttpStatus.TOO_MANY_REQUESTS, "verification code requested too frequently"),
+    UPLOAD_RATE_LIMITED(42902, HttpStatus.TOO_MANY_REQUESTS, "too many upload attempts"),
     INTERNAL(50000, HttpStatus.INTERNAL_SERVER_ERROR, "internal server error");
 
     private final int code;

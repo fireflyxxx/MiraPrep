@@ -24,6 +24,16 @@ public class InMemoryRequestRateLimiter implements RequestRateLimiter {
         return counter.count().get() <= limit;
     }
 
+    @Override
+    public void release(String key) {
+        counters.computeIfPresent(key, (ignored, counter) -> {
+            if (counter.expired() || counter.count().decrementAndGet() <= 0) {
+                return null;
+            }
+            return counter;
+        });
+    }
+
     private record Counter(AtomicInteger count, Instant expiresAt) {
         boolean expired() {
             return !expiresAt.isAfter(Instant.now());

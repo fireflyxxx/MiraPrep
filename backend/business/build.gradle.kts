@@ -33,6 +33,7 @@ dependencies {
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-mysql")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0")
+    implementation("io.minio:minio:8.5.14")
 
     runtimeOnly("com.mysql:mysql-connector-j")
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
