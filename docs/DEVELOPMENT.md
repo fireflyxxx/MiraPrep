@@ -167,6 +167,8 @@ AI_INTERNAL_TOKEN=...        # 内部调用鉴权
 ```
 ANTHROPIC_API_KEY=...
 ANTHROPIC_MODEL=claude-sonnet-5
+ANTHROPIC_BASE_URL=...       # 可选：Anthropic 兼容服务地址；留空使用默认 Anthropic 地址
+ANTHROPIC_MAX_TOKENS=4096    # 单次模型输出上限
 BUSINESS_CALLBACK_URL=http://localhost:8080/api/v1/internal
 INTERNAL_TOKEN=...           # 与 Spring 侧 AI_INTERNAL_TOKEN 一致
 REDIS_HOST=localhost

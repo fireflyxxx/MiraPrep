@@ -18,7 +18,7 @@ AI 服务负责简历解析、大纲生成、面试官对话、批改、ASR/TTS 
 - Python 3.12、FastAPI、Uvicorn、Pydantic v2、`anthropic`、`httpx`、`redis`、`ruff`+`black`。
 - 目录：`app/{main.py, config.py, deps.py, logging.py, clients/{llm.py,business.py,redis.py}, routers/{health.py,internal.py}, prompts/}`。
 - 在写任何 LLM 相关代码前，**先读 claude-api 技能/文档**核对模型 id 与用法；默认模型 `claude-sonnet-5`，批改可切 `claude-opus-4-8`（从配置读，不硬编码）。
-- `config.py`：`Settings` 含 `anthropic_api_key`、`anthropic_model`、`business_callback_url`、`internal_token`、`redis_host/port`、`asr_provider`、`tts_provider`。
+- `config.py`：`Settings` 含 `anthropic_api_key`、`anthropic_model`、可选 `anthropic_base_url`（兼容服务地址）、`anthropic_max_tokens`、`business_callback_url`、`internal_token`、`redis_host/port`、`asr_provider`、`tts_provider`。
 - 内部鉴权：FastAPI `Depends` 校验 `X-Internal-Token == settings.internal_token`，供 `/internal/*` 路由复用。
 - LLM 客户端：封装 `async def complete(messages, system=..., model=None) -> str` 与 `async def stream(...)`（yield token）。**prompt 里用户/简历内容作为不可信数据处理**（见 `DEVELOPMENT.md §7.5`）。
 - 回调客户端：`async def callback(path, json)`，向 `business_callback_url + path` POST，带内部 token，失败重试（指数退避 3 次）。

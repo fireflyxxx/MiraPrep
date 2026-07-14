@@ -22,4 +22,12 @@ public class RedisRequestRateLimiter implements RequestRateLimiter {
         }
         return count != null && count <= limit;
     }
+
+    @Override
+    public void release(String key) {
+        Long count = redisTemplate.opsForValue().decrement(key);
+        if (count != null && count <= 0) {
+            redisTemplate.delete(key);
+        }
+    }
 }

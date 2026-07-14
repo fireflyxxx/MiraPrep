@@ -7,7 +7,11 @@ from app.config import Settings
 
 
 class FakeMessages:
+    def __init__(self) -> None:
+        self.last_request: dict[str, object] = {}
+
     async def create(self, **kwargs):  # type: ignore[no-untyped-def]
+        self.last_request = kwargs
         if kwargs.get("stream"):
 
             async def events():
@@ -32,7 +36,57 @@ class FakeMessages:
 
 
 class FakeAnthropicClient:
-    messages = FakeMessages()
+    def __init__(self) -> None:
+        self.messages = FakeMessages()
+
+
+def test_settings_accepts_anthropic_compatible_base_url() -> None:
+    settings = Settings(anthropic_base_url="https://api.deepseek.com/anthropic")
+
+    assert settings.anthropic_base_url == "https://api.deepseek.com/anthropic"
+
+
+def test_llm_client_passes_configured_base_url_to_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class CapturingAnthropicClient:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr("app.clients.llm.AsyncAnthropic", CapturingAnthropicClient)
+
+    LlmClient(Settings(anthropic_base_url="https://api.deepseek.com/anthropic"))
+
+    assert captured["base_url"] == "https://api.deepseek.com/anthropic"
+
+
+@pytest.mark.asyncio
+async def test_llm_client_uses_configured_max_tokens() -> None:
+    fake_client = FakeAnthropicClient()
+    client = LlmClient(Settings(anthropic_max_tokens=4096), client=fake_client)
+
+    await client.complete([{"role": "user", "content": "hello"}])
+
+    assert fake_client.messages.last_request["max_tokens"] == 4096
+
+
+@pytest.mark.asyncio
+async def test_llm_client_closes_owned_sdk_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    class ClosableAnthropicClient:
+        closed = False
+
+        def __init__(self, **kwargs: object) -> None:
+            return None
+
+        async def close(self) -> None:
+            self.closed = True
+
+    monkeypatch.setattr("app.clients.llm.AsyncAnthropic", ClosableAnthropicClient)
+    client = LlmClient(Settings())
+
+    await client.aclose()
+
+    assert client._client.closed is True
 
 
 @pytest.mark.asyncio
