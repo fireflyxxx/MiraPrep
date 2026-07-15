@@ -19,7 +19,7 @@ X-Internal-Token: <shared token>
 
 ```json
 {
-  "sessionId": "session-1",
+  "sessionId": 1,
   "config": {
     "jobDirection": "前端开发",
     "jobTitle": "高级前端工程师",
@@ -39,7 +39,7 @@ X-Internal-Token: <shared token>
 }
 ```
 
-路由参数 `id` 必须与 body 中的 `sessionId` 一致，避免把结果回调到错误会话。合法请求立即返回：
+路由参数 `id` 与 body 中的 `sessionId` 都使用 Spring 业务库的正整数主键，并且两者必须一致，避免把结果回调到错误会话。合法请求立即返回：
 
 ```json
 {"accepted": true}

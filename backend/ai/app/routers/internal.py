@@ -1,12 +1,14 @@
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 
 from app.clients.business import BusinessCallbackClient
 from app.clients.llm import LlmClient
 from app.config import Settings, get_settings
 from app.deps import require_internal_token
+from app.schemas.outline import OutlineAcceptedResponse, OutlineRequest
 from app.schemas.resume import ResumeParseAcceptedResponse, ResumeParseRequest
+from app.services.outline import OutlineGenerationService
 from app.services.resume_parse import ResumeParseService
 
 router = APIRouter(
@@ -35,6 +37,20 @@ def get_resume_parse_service(
     return _build_service(settings)
 
 
+def _build_outline_service(settings: Settings) -> OutlineGenerationService:
+    """组装一次大纲生成任务专用的外部客户端。"""
+
+    llm = LlmClient(settings)
+    callback = BusinessCallbackClient(settings)
+    return OutlineGenerationService(llm=llm, callback=callback)
+
+
+def get_outline_service(
+    settings: Settings = Depends(get_settings),
+) -> OutlineGenerationService:
+    return _build_outline_service(settings)
+
+
 @router.get("/ping")
 async def ping() -> dict[str, str]:
     return {"status": "UP"}
@@ -61,3 +77,25 @@ async def parse_resume(
         mime_type=body.mimeType,
     )
     return ResumeParseAcceptedResponse(accepted=True)
+
+
+@router.post(
+    "/interviews/{session_id}/outline",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=OutlineAcceptedResponse,
+)
+async def generate_outline(
+    session_id: int,
+    body: OutlineRequest,
+    background_tasks: BackgroundTasks,
+    service: OutlineGenerationService = Depends(get_outline_service),
+) -> OutlineAcceptedResponse:
+    """立即接受大纲任务，生成结果通过内部回调交还业务服务。"""
+
+    if session_id != body.sessionId:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="path session id must match body sessionId",
+        )
+    background_tasks.add_task(service.generate_outline, body)
+    return OutlineAcceptedResponse(accepted=True)
