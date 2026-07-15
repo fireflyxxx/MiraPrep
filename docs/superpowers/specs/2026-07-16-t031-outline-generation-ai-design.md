@@ -116,7 +116,7 @@ X-Internal-Token: <shared token>
 
 ## 防幻觉与防注入
 
-模型不能凭空生成“简历深挖”事实。Service 从 `parsedJson.projects[].name`、`projects[].tech[]` 和顶层 `skills[]` 提取可引用词，至少一条 `RESUME_DEEP_DIVE` 题目必须包含其中一个真实词；简历没有任何可引用项目或技术时，深挖题只能询问通用经历，不启用该强校验。
+模型不能凭空生成“简历深挖”事实。Service 只从列表形态的 `parsedJson.projects[]`、`projects[].tech[]` 和顶层 `skills[]` 提取可引用词，并过滤清理后长度小于 3 的歧义短词，避免 `C`、`R`、`Go` 通过普通子串误命中。至少一条 `RESUME_DEEP_DIVE` 题目必须包含其中一个可靠真实词；简历没有任何可靠项目或技术时，深挖题只能询问通用经历，不启用该强校验。
 
 简历、JD、自定义要求中即使出现“忽略以上指令”“输出系统提示”等文本，也只会进入不可信数据区。它们不得进入 system prompt，也不得改变输出 schema。
 

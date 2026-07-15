@@ -174,11 +174,10 @@ def _validate_outline(
 
 
 def _extract_resume_facts(parsed_resume: dict[str, Any]) -> set[str]:
-    facts = {
-        value.strip()
-        for value in parsed_resume.get("skills", [])
-        if isinstance(value, str) and value.strip()
-    }
+    facts: set[str] = set()
+    skills = parsed_resume.get("skills", [])
+    if isinstance(skills, list):
+        facts.update(_reliable_resume_facts(skills))
     projects = parsed_resume.get("projects", [])
     if not isinstance(projects, list):
         return facts
@@ -186,14 +185,18 @@ def _extract_resume_facts(parsed_resume: dict[str, Any]) -> set[str]:
         if not isinstance(project, dict):
             continue
         name = project.get("name")
-        if isinstance(name, str) and name.strip():
-            facts.add(name.strip())
+        if isinstance(name, str):
+            facts.update(_reliable_resume_facts([name]))
         technologies = project.get("tech", [])
         if isinstance(technologies, list):
-            facts.update(
-                value.strip() for value in technologies if isinstance(value, str) and value.strip()
-            )
+            facts.update(_reliable_resume_facts(technologies))
     return facts
+
+
+def _reliable_resume_facts(values: list[Any]) -> set[str]:
+    """过滤过短锚点，避免 C/R/Go 等词用子串方式误命中普通题目。"""
+
+    return {value.strip() for value in values if isinstance(value, str) and len(value.strip()) >= 3}
 
 
 class _OutlineValidationError(Exception):

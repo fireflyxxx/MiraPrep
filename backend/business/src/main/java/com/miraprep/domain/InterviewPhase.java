@@ -1,9 +1,10 @@
 package com.miraprep.domain;
 
 public enum InterviewPhase {
-    INTRODUCTION,
-    TECHNICAL,
-    PROJECT,
-    FOLLOW_UP,
+    SELF_INTRO,
+    RESUME_DEEP_DIVE,
+    DOMAIN_ASSESSMENT,
+    BEHAVIORAL,
+    CANDIDATE_QA,
     CLOSING
 }

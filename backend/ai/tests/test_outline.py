@@ -13,7 +13,12 @@ from app.main import app
 from app.prompts.outline import SYSTEM_PROMPT, build_user_prompt
 from app.routers.internal import get_outline_service
 from app.schemas.outline import InterviewPhase, OutlineRequest
-from app.services.outline import OutlineGenerationService, build_phase_budget
+from app.services.outline import (
+    OutlineGenerationService,
+    _extract_resume_facts,
+    _strip_markdown_fence,
+    build_phase_budget,
+)
 
 
 def _request_data(duration_min: int = 30, types: list[str] | None = None) -> dict:
@@ -150,6 +155,59 @@ def test_outline_request_accepts_numeric_business_session_id() -> None:
     request = OutlineRequest.model_validate(data)
 
     assert request.sessionId == 31
+
+
+@pytest.mark.parametrize("skills", [None, "Java,Python"])
+def test_extract_resume_facts_ignores_non_list_skills(skills: object) -> None:
+    assert _extract_resume_facts({"skills": skills}) == set()
+
+
+def test_extract_resume_facts_ignores_short_ambiguous_terms() -> None:
+    parsed_resume = {
+        "skills": ["C", "R", "Go", "Java"],
+        "projects": [{"name": "AI", "tech": ["C++", "React"]}],
+    }
+
+    assert _extract_resume_facts(parsed_resume) == {"Java", "C++", "React"}
+
+
+def test_interview_phase_vocabulary_is_frozen() -> None:
+    # 与 T-030 Java 侧 InterviewPhase 枚举共享契约：任一侧改动都会破坏端到端落库。
+    assert [phase.value for phase in InterviewPhase] == [
+        "SELF_INTRO",
+        "RESUME_DEEP_DIVE",
+        "DOMAIN_ASSESSMENT",
+        "BEHAVIORAL",
+        "CANDIDATE_QA",
+        "CLOSING",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ('{"questions": []}', '{"questions": []}'),
+        ('  {"questions": []}  ', '{"questions": []}'),
+        ('```json\n{"questions": []}\n```', '{"questions": []}'),
+        ('```JSON\n{"questions": []}\n```', '{"questions": []}'),
+        ('```\n{"questions": []}\n```', '{"questions": []}'),
+    ],
+)
+def test_strip_markdown_fence_handles_common_llm_wrappers(raw: str, expected: str) -> None:
+    assert _strip_markdown_fence(raw) == expected
+
+
+@pytest.mark.asyncio
+async def test_service_parses_llm_output_wrapped_in_json_fence() -> None:
+    request = OutlineRequest.model_validate(_request_data(30))
+    llm = RecordingLlm(f"```json\n{_valid_outline(request)}\n```")
+    callback = RecordingCallback()
+    service = OutlineGenerationService(llm=llm, callback=callback)
+
+    await service.generate_outline(request)
+
+    assert len(callback.calls) == 1
+    assert callback.calls[0]["json"]["status"] == "ready"
 
 
 def test_prompt_keeps_user_controlled_content_out_of_system_instructions() -> None:

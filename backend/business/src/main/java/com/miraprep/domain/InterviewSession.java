@@ -64,6 +64,9 @@ public class InterviewSession extends BaseAuditableEntity {
     @Column(name = "interviewer_style")
     private InterviewerStyle interviewerStyle;
 
+    @Column(name = "voice_enabled", nullable = false)
+    private boolean voiceEnabled;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private InterviewStatus status = InterviewStatus.CREATED;

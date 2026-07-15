@@ -193,7 +193,7 @@ sum(question.suggestedSeconds for question in questions) <= durationMin * 60
 phase_indexes == sorted(phase_indexes)
 ```
 
-Extract non-empty project names, project technologies, and top-level skills case-insensitively. If facts exist, require at least one deep-dive question to contain one fact.
+Extract project names, project technologies, and top-level skills only from list-shaped fields, and retain facts whose trimmed length is at least 3. If reliable facts exist, require at least one deep-dive question to contain one fact case-insensitively.
 
 - [ ] **Step 4: Run success-path tests and verify GREEN**
 
