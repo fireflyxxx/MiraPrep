@@ -130,6 +130,9 @@ async function request<T>(
     credentials: requestOptions.credentials ?? "include",
     headers: buildHeaders(requestOptions, true),
   });
+  if (response.status === 204) {
+    return undefined as T;
+  }
   const envelope = await parseEnvelope(response);
 
   if (

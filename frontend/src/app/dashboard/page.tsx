@@ -1,6 +1,6 @@
 import Link from "next/link";
 import DashboardShell from "@/components/dashboard/DashboardShell";
-import { resumes } from "@/lib/mock-data";
+import DashboardResumeSection from "@/components/resume/DashboardResumeSection";
 
 export default function DashboardPage() {
   return (
@@ -57,50 +57,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="animate-mira-soft-pop overflow-hidden rounded-[20px] border border-border-subtle bg-surface [animation-delay:.16s]">
-        <div className="flex items-center justify-between border-b border-muted px-6 py-5">
-          <div>
-            <h3 className="m-0 text-base font-semibold">我的简历</h3>
-            <p className="m-0 mt-0.5 text-[12.5px] text-muted-foreground">
-              面试题目会围绕这些简历生成
-            </p>
-          </div>
-          <label
-            htmlFor="resume-upload"
-            className="mira-button flex cursor-pointer items-center gap-1.5 rounded-[10px] bg-primary-soft px-3.5 py-2 text-[13px] font-medium text-primary hover:bg-primary/15"
-          >
-            <span className="text-base leading-none">+</span>
-            添加简历
-          </label>
-          <input id="resume-upload" type="file" accept=".pdf" className="hidden" />
-        </div>
-        <div>
-          {resumes.map((r) => (
-            <div
-              key={r.id}
-              className="mira-button flex items-center gap-3.5 border-b border-muted px-6 py-4 last:border-b-0 hover:bg-surface-subtle"
-            >
-              <span className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[10px] bg-primary-soft font-display text-[11px] font-bold text-primary">
-                PDF
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{r.name}</div>
-                <div className="text-xs text-muted-foreground">{r.meta}</div>
-              </div>
-              <button className="mira-button rounded-lg px-3 py-1.5 text-[12.5px] text-muted-foreground hover:bg-muted hover:text-foreground">
-                查看
-              </button>
-              <Link
-                href="/interview/setup"
-                transitionTypes={["nav-forward"]}
-                className="mira-button rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-primary hover:bg-primary-soft"
-              >
-                用它面试 →
-              </Link>
-            </div>
-          ))}
-        </div>
-      </div>
+      <DashboardResumeSection />
     </DashboardShell>
   );
 }
