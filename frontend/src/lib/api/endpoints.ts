@@ -23,6 +23,7 @@ export const endpoints = {
   sendCode: "/auth/send-code",
   me: "/users/me",
   myProfile: "/users/me/profile",
+  resumes: "/resumes",
 } as const;
 
 export function toApiUrl(path: string): string {

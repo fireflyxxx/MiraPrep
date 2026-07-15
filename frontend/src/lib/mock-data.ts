@@ -100,17 +100,6 @@ export const questions: InterviewQuestion[] = [
   },
 ];
 
-export interface ResumeFile {
-  id: string;
-  name: string;
-  meta: string;
-}
-
-export const resumes: ResumeFile[] = [
-  { id: "v3", name: "王同学_前端简历_v3.pdf", meta: "2.1 MB · 3 天前上传" },
-  { id: "v2", name: "王同学_前端简历_v2.pdf", meta: "1.9 MB · 上月上传" },
-];
-
 export const onboardJobs = [
   { id: "frontend", label: "前端工程师", sub: "Web / 移动端" },
   { id: "backend", label: "后端工程师", sub: "服务 / 架构" },

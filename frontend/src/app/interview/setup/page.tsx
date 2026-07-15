@@ -1,16 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Logo from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import AuthGuard from "@/components/AuthGuard";
+import ResumeList from "@/components/resume/ResumeList";
+import ResumeUpload, { type ResumeUploadHandle } from "@/components/resume/ResumeUpload";
+import { selectInitialResumeId, useResumeLibrary } from "@/lib/api/resume";
 import {
   configDiffCards,
   configDurations,
   configFocusOptions,
   configJobCards,
-  resumes,
 } from "@/lib/mock-data";
 
 function cardClass(selected: boolean, center = false) {
@@ -41,31 +43,28 @@ function StepDot({ index, state }: { index: number; state: "done" | "active" | "
 export default function InterviewSetupPage() {
   const router = useRouter();
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [uploading, setUploading] = useState(false);
   const [preparing, setPreparing] = useState(false);
-  const [resumeList, setResumeList] = useState(resumes);
-  const [resumeId, setResumeId] = useState(resumes[0].id);
+  const [resumeId, setResumeId] = useState<number | null>(null);
+  const resumeLibrary = useResumeLibrary();
+  const initializedResume = useRef(false);
+  const uploadRef = useRef<ResumeUploadHandle>(null);
   const [job, setJob] = useState("frontend");
   const [difficulty, setDifficulty] = useState("mid");
   const [duration, setDuration] = useState("30");
   const [focus, setFocus] = useState<string[]>(["project", "system"]);
+  const selectedResumeReady = resumeLibrary.data?.items.some(
+    (resume) => resume.id === resumeId && resume.parseStatus === "success",
+  ) ?? false;
 
   const toggleFocus = (id: string) =>
     setFocus((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
 
-  const handleUpload = () => {
-    if (uploading) return;
-    setUploading(true);
-    setTimeout(() => {
-      const id = "v" + Date.now();
-      setResumeList((cur) => [
-        { id, name: "王同学_前端简历_v4.pdf（刚上传）", meta: "2.3 MB · 刚刚上传" },
-        ...cur,
-      ]);
-      setResumeId(id);
-      setUploading(false);
-    }, 1100);
-  };
+  useEffect(() => {
+    if (initializedResume.current || !resumeLibrary.data) return;
+    const requestedId = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("resumeId");
+    setResumeId(selectInitialResumeId(resumeLibrary.data.items, requestedId));
+    initializedResume.current = true;
+  }, [resumeLibrary.data]);
 
   const stepLabels = { 1: "第 1 步 · 简历", 2: "第 2 步 · 岗位", 3: "第 3 步 · 要求" };
 
@@ -78,6 +77,7 @@ export default function InterviewSetupPage() {
   };
 
   const goNext = () => {
+    if (step === 1 && !selectedResumeReady) return;
     if (step < 3) setStep((s) => (s + 1) as 1 | 2 | 3);
     else startInterview();
   };
@@ -121,54 +121,20 @@ export default function InterviewSetupPage() {
               <p className="m-0 mb-7 text-[14.5px] text-muted-foreground">
                 Mira 会解析简历，围绕你的真实经历提问。
               </p>
-              {uploading ? (
-                <div className="mb-6 rounded-[18px] border-2 border-dashed border-primary bg-primary-soft p-11 text-center">
-                  <div className="mx-auto mb-4 flex h-[52px] w-[52px] items-center justify-center rounded-[14px] bg-surface shadow-[0_4px_14px_rgba(249,115,22,0.2)]">
-                    <span className="flex h-4 items-end gap-[3px]">
-                      <span className="animate-mira-bar block h-full w-[3px] rounded-sm bg-orange-500" />
-                      <span className="animate-mira-bar-2 block h-full w-[3px] rounded-sm bg-orange-500" />
-                      <span className="animate-mira-bar-4 block h-full w-[3px] rounded-sm bg-orange-500" />
-                    </span>
-                  </div>
-                  <div className="text-[15px] font-medium text-primary">正在上传并解析简历…</div>
-                </div>
-              ) : (
-                <div
-                  onClick={handleUpload}
-                  className="mira-surface mb-6 cursor-pointer rounded-[18px] border-2 border-dashed border-border bg-surface p-11 text-center hover:border-primary"
-                >
-                  <div className="mx-auto mb-4 flex h-[52px] w-[52px] items-center justify-center rounded-[14px] bg-primary-soft">
-                    <span className="block h-4 w-4 rounded-[4px] border-[3px] border-orange-500" />
-                  </div>
-                  <div className="mb-1 text-[15px] font-medium">拖拽简历到此处，或点击上传</div>
-                  <div className="text-[13px] text-muted-foreground">支持 PDF / Word，最大 10 MB</div>
-                </div>
-              )}
+              <ResumeUpload
+                ref={uploadRef}
+                onUploaded={(resume) => {
+                  if (resume.parseStatus === "success") setResumeId(resume.id);
+                }}
+              />
               <div className="mb-3 text-[13px] text-muted-foreground">或选择已上传的简历</div>
-              <div className="flex flex-col gap-2.5">
-                {resumeList.map((r) => (
-                  <div
-                    key={r.id}
-                    onClick={() => setResumeId(r.id)}
-                    className={`mira-surface flex cursor-pointer items-center justify-between rounded-xl border bg-surface px-[18px] py-3.5 ${resumeId === r.id ? "border-primary" : "border-border-subtle"}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className={`flex h-11 w-9 items-end justify-center rounded-md border pb-1 font-display text-[9px] ${resumeId === r.id ? "border-primary/25 bg-primary-soft text-primary" : "border-border bg-muted text-muted-foreground"}`}>
-                        PDF
-                      </span>
-                      <div>
-                        <div className="text-sm font-medium">{r.name}</div>
-                        <div className="text-xs text-muted-foreground">{r.meta}</div>
-                      </div>
-                    </div>
-                    {resumeId === r.id ? (
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-500 text-xs text-white">✓</span>
-                    ) : (
-                      <span className="block h-5 w-5 rounded-full border-[1.5px] border-border" />
-                    )}
-                  </div>
-                ))}
-              </div>
+              <ResumeList
+                mode="setup"
+                selectedId={resumeId}
+                onSelect={setResumeId}
+                emptyMessage="还没有可选简历，请先在上方上传。"
+                retryUpload={() => uploadRef.current?.openFileDialog()}
+              />
             </>
           )}
 
@@ -239,7 +205,7 @@ export default function InterviewSetupPage() {
         </button>
         <button
           onClick={goNext}
-          disabled={preparing}
+          disabled={preparing || (step === 1 && !selectedResumeReady)}
           className="mira-button rounded-[10px] bg-orange-500 px-[26px] py-[11px] text-[14.5px] font-medium text-white shadow-[0_6px_18px_rgba(249,115,22,0.25)] disabled:cursor-not-allowed disabled:opacity-70"
         >
           {step === 3 ? "开始面试 →" : "下一步 →"}

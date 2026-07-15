@@ -13,6 +13,11 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("apiClient", () => {
+  it("accepts a successful 204 response without trying to parse JSON", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+
+    await expect(apiClient<void>("/resumes/1", { method: "DELETE" })).resolves.toBeUndefined();
+  });
   afterEach(() => {
     clearAuthTokens();
     vi.unstubAllGlobals();
