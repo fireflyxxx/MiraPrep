@@ -24,6 +24,7 @@ export const endpoints = {
   me: "/users/me",
   myProfile: "/users/me/profile",
   resumes: "/resumes",
+  interviews: "/interviews",
 } as const;
 
 export function toApiUrl(path: string): string {

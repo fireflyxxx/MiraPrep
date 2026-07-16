@@ -9,6 +9,7 @@ import {
 import { toast } from "sonner";
 import { apiClient } from "./client";
 import { endpoints } from "./endpoints";
+import { pollUntilSettled, type PollOptions } from "./poll";
 
 export const MAX_RESUME_FILE_SIZE = 10 * 1024 * 1024;
 const POLL_INTERVAL_MS = 1_500;
@@ -102,8 +103,8 @@ export async function listResumes(): Promise<ResumeListResponse> {
   return apiClient<ResumeListResponse>(`${endpoints.resumes}?page=1&size=20`);
 }
 
-export async function getResume(id: number): Promise<ResumeDetail> {
-  return apiClient<ResumeDetail>(`${endpoints.resumes}/${id}`);
+export async function getResume(id: number, signal?: AbortSignal): Promise<ResumeDetail> {
+  return apiClient<ResumeDetail>(`${endpoints.resumes}/${id}`, { signal });
 }
 
 export async function uploadResume(file: File): Promise<ResumeSummary> {
@@ -126,25 +127,20 @@ export async function updateResume(input: UpdateResumeInput): Promise<ResumeSumm
 
 export async function pollResumeUntilSettled(
   id: number,
-  options: {
-    intervalMs?: number;
-    maxAttempts?: number;
-    getResume?: (id: number) => Promise<ResumeDetail>;
+  options: PollOptions & {
+    getResume?: (id: number, signal?: AbortSignal) => Promise<ResumeDetail>;
   } = {},
 ): Promise<ResumeDetail> {
-  const intervalMs = options.intervalMs ?? POLL_INTERVAL_MS;
-  const maxAttempts = options.maxAttempts ?? MAX_POLL_ATTEMPTS;
   const fetchResume = options.getResume ?? getResume;
-  let latest: ResumeDetail | null = null;
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    latest = await fetchResume(id);
-    if (latest.parseStatus !== "pending") return latest;
-    if (attempt < maxAttempts - 1 && intervalMs > 0) {
-      await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
-    }
-  }
-  if (latest) return latest;
-  throw new Error("简历轮询次数必须大于 0");
+  return pollUntilSettled(
+    (signal) => fetchResume(id, signal),
+    (resume) => resume.parseStatus === "pending",
+    {
+      intervalMs: options.intervalMs ?? POLL_INTERVAL_MS,
+      maxAttempts: options.maxAttempts ?? MAX_POLL_ATTEMPTS,
+      signal: options.signal,
+    },
+  );
 }
 
 export function updateResumeListCache(queryClient: QueryClient, updated: ResumeSummary): void {
@@ -193,9 +189,11 @@ export function useUploadResume() {
     mutationFn: async ({
       file,
       onUploadAccepted,
+      signal,
     }: {
       file: File;
       onUploadAccepted?: (resume: ResumeSummary) => void;
+      signal?: AbortSignal;
     }) => {
       const uploaded = await uploadResume(file);
       queryClient.setQueryData<ResumeListResponse>(resumeKeys.list(), (current) => ({
@@ -205,7 +203,7 @@ export function useUploadResume() {
         size: 20,
       }));
       onUploadAccepted?.(uploaded);
-      return pollResumeUntilSettled(uploaded.id);
+      return pollResumeUntilSettled(uploaded.id, { signal });
     },
     onSuccess: (detail) => {
       queryClient.setQueryData(resumeKeys.detail(detail.id), detail);
