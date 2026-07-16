@@ -1,5 +1,7 @@
 package com.miraprep.client;
 
+import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,5 +36,50 @@ public class AiServiceClient {
         }
     }
 
+    @Async("resumeParseExecutor")
+    public void requestInterviewOutline(InterviewOutlineRequest request) {
+        try {
+            restClient.post()
+                    .uri("/internal/interviews/{sessionId}/outline", request.sessionId())
+                    .header("X-Internal-Token", internalToken)
+                    .body(request)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (Exception exception) {
+            LOGGER.error("Failed to request outline for interview {}", request.sessionId(), exception);
+        }
+    }
+
+    @Async("resumeParseExecutor")
+    public void requestInterviewGrade(InterviewGradeRequest request) {
+        try {
+            restClient.post()
+                    .uri("/internal/interviews/{sessionId}/grade", request.sessionId())
+                    .header("X-Internal-Token", internalToken)
+                    .body(request)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (Exception exception) {
+            LOGGER.error("Failed to request grading for interview {}", request.sessionId(), exception);
+        }
+    }
+
     public record ResumeParseRequest(Long resumeId, String signedUrl, String fileName, String mimeType) {}
+
+    public record InterviewOutlineRequest(
+            Long sessionId, InterviewOutlineConfig config, InterviewOutlineResume resume) {}
+
+    public record InterviewOutlineConfig(
+            String jobDirection,
+            String jobTitle,
+            String jdText,
+            String difficulty,
+            List<String> types,
+            int durationMin,
+            String customRequirements,
+            String interviewerStyle) {}
+
+    public record InterviewOutlineResume(Map<String, Object> parsedJson) {}
+
+    public record InterviewGradeRequest(Long sessionId) {}
 }
