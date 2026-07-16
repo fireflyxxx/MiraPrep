@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   MAX_RESUME_FILE_SIZE,
   pollResumeUntilSettled,
@@ -63,6 +63,24 @@ describe("resume API helpers", () => {
         getResume: async () => pending,
       }),
     ).resolves.toEqual(pending);
+  });
+
+  it("stops polling once the caller aborts", async () => {
+    const controller = new AbortController();
+    const getResume = vi.fn(async () => {
+      controller.abort();
+      return pending;
+    });
+
+    await expect(
+      pollResumeUntilSettled(7, {
+        intervalMs: 0,
+        maxAttempts: 5,
+        signal: controller.signal,
+        getResume,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(getResume).toHaveBeenCalledTimes(1);
   });
 
   it("updates the one shared list cache after a mutation", () => {

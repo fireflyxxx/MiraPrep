@@ -2,6 +2,7 @@
 
 import {
   forwardRef,
+  useEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -27,6 +28,7 @@ const ResumeUpload = forwardRef<ResumeUploadHandle, ResumeUploadProps>(function 
   ref,
 ) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const activeUpload = useRef<AbortController | null>(null);
   const [dragging, setDragging] = useState(false);
   const [phase, setPhase] = useState<"idle" | "uploading" | "parsing">("idle");
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -36,21 +38,28 @@ const ResumeUpload = forwardRef<ResumeUploadHandle, ResumeUploadProps>(function 
     openFileDialog: () => inputRef.current?.click(),
   }), []);
 
+  // 卸载后解析轮询不再有人看，中止它；onSettled 的失效会让重新挂载时refetch到最新状态。
+  useEffect(() => () => activeUpload.current?.abort(), []);
+
   const chooseFile = async (file?: File) => {
     if (!file || upload.isPending) return;
     const error = validateResumeFile(file);
     setValidationError(error);
     if (error) return;
     setPhase("uploading");
+    const controller = new AbortController();
+    activeUpload.current = controller;
     try {
       const detail = await upload.mutateAsync({
         file,
+        signal: controller.signal,
         onUploadAccepted: () => setPhase("parsing"),
       });
       onUploaded?.(detail);
     } catch {
       // React Query 已保存错误并由下方错误态展示；在事件边界收口 rejection。
     } finally {
+      if (activeUpload.current === controller) activeUpload.current = null;
       setPhase("idle");
       if (inputRef.current) inputRef.current.value = "";
     }

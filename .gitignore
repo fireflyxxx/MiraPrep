@@ -6,6 +6,10 @@
 # Agent-managed isolated worktrees
 .worktrees/
 
+# Root-level JavaScript dependencies and tool logs
+/node_modules/
+**/.black.log
+
 # Generated Python bytecode and IDE metadata
 **/__pycache__/
 *.py[cod]

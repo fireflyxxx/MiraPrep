@@ -125,33 +125,6 @@ export const skillOptions = [
   "性能优化",
 ];
 
-export const configJobCards = [
-  { id: "frontend", label: "前端工程师", sub: "React / Vue / 工程化" },
-  { id: "backend", label: "后端工程师", sub: "Java / Go / 分布式" },
-  { id: "fullstack", label: "全栈工程师", sub: "前后端一体" },
-  { id: "pm", label: "产品经理", sub: "需求 / 数据 / 增长" },
-];
-
-export const configDiffCards = [
-  { id: "junior", label: "初级", sub: "应届 / 1 年内" },
-  { id: "mid", label: "中级", sub: "1-3 年" },
-  { id: "senior", label: "高级", sub: "3 年以上" },
-];
-
-export const configDurations = [
-  { id: "15", label: "15 分钟" },
-  { id: "30", label: "30 分钟" },
-  { id: "45", label: "45 分钟" },
-];
-
-export const configFocusOptions = [
-  { id: "project", label: "项目深挖" },
-  { id: "algo", label: "算法与数据结构" },
-  { id: "system", label: "系统设计" },
-  { id: "behavior", label: "行为面试" },
-  { id: "stress", label: "压力测试" },
-];
-
 export const interviewHistory = [
   {
     grade: "A-",

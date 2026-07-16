@@ -18,9 +18,9 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 function withClient(client: QueryClient) {
-  return ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
-  );
+  return function QueryClientTestWrapper({ children }: { children: ReactNode }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  };
 }
 
 function okResponse(data: unknown): Response {
