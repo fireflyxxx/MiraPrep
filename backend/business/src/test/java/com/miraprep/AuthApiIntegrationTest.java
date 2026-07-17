@@ -95,6 +95,46 @@ class AuthApiIntegrationTest {
     }
 
     @Test
+    void skippingOnboardingPersistsAnEmptyProfileAndClearsFirstLogin() throws Exception {
+        String email = uniqueEmail();
+        MvcResult registration = mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType("application/json")
+                        .content(registerBody(email)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.user.isFirstLogin").value(true))
+                .andReturn();
+        String accessToken = jsonField(registration, "accessToken");
+
+        mockMvc.perform(put("/api/v1/users/me/profile")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .contentType("application/json")
+                        .content("""
+                                {"jobDirection":null,"techStacks":[],"experienceLevel":null,
+                                 "status":null,"targetCompany":null,"preferences":{}}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.jobDirection", nullValue()))
+                .andExpect(jsonPath("$.data.techStacks").isEmpty())
+                .andExpect(jsonPath("$.data.experienceLevel", nullValue()))
+                .andExpect(jsonPath("$.data.status", nullValue()))
+                .andExpect(jsonPath("$.data.targetCompany", nullValue()));
+
+        Long userId = jdbcTemplate.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, email);
+        Integer profileCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM user_profile WHERE user_id = ?", Integer.class, userId);
+        Boolean isFirstLogin = jdbcTemplate.queryForObject(
+                "SELECT is_first_login FROM users WHERE id = ?", Boolean.class, userId);
+        org.assertj.core.api.Assertions.assertThat(profileCount).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(isFirstLogin).isFalse();
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType("application/json")
+                        .content("{\"email\":\"%s\",\"password\":\"%s\"}".formatted(email, PASSWORD)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.user.isFirstLogin").value(false));
+    }
+
+    @Test
     void refreshRotationRejectsThePreviousRefreshToken() throws Exception {
         String email = uniqueEmail();
         MvcResult registration = mockMvc.perform(post("/api/v1/auth/register")

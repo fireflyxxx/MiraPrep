@@ -1,7 +1,9 @@
 package com.miraprep.client;
 
+import java.net.http.HttpClient;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,7 +20,13 @@ public class AiServiceClient {
     public AiServiceClient(
             @Value("${app.ai-service.base-url}") String baseUrl,
             @Value("${app.internal-token:}") String internalToken) {
-        this.restClient = RestClient.builder().baseUrl(baseUrl).build();
+        HttpClient httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+        this.restClient = RestClient.builder()
+                .baseUrl(baseUrl)
+                .requestFactory(new JdkClientHttpRequestFactory(httpClient))
+                .build();
         this.internalToken = internalToken;
     }
 

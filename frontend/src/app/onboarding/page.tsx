@@ -1,9 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import AuthGuard from "@/components/AuthGuard";
 import { experienceOptions, onboardJobs, skillOptions } from "@/lib/mock-data";
+import {
+  updateMyProfile,
+  type ExperienceLevel,
+  type UpdateProfileInput,
+} from "@/lib/api/user";
+import { getMe } from "@/lib/api/auth";
+
+const experienceLevelByOption: Record<string, ExperienceLevel> = {
+  "0": "STUDENT",
+  "1-3": "JUNIOR",
+  "3-5": "MID",
+  "5+": "SENIOR",
+};
 
 function cardClass(selected: boolean) {
   return `mira-surface cursor-pointer rounded-xl border px-4 py-4 text-left ${
@@ -25,13 +39,75 @@ export default function OnboardingPage() {
   const [job, setJob] = useState("frontend");
   const [exp, setExp] = useState("1-3");
   const [skills, setSkills] = useState<string[]>(["React", "TypeScript", "Next.js"]);
+  const [targetCompany, setTargetCompany] = useState("");
+  const [canOnboard, setCanOnboard] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getMe()
+      .then((user) => {
+        if (!active) return;
+        if (!user.isFirstLogin) {
+          router.replace("/dashboard");
+          return;
+        }
+        setCanOnboard(true);
+      })
+      .catch(() => {
+        if (!active) return;
+        const message = "加载用户信息失败，请刷新重试";
+        setSaveError(message);
+        toast.error(message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
   const toggleSkill = (sk: string) =>
     setSkills((cur) => (cur.includes(sk) ? cur.filter((x) => x !== sk) : [...cur, sk]));
 
+  const saveAndContinue = async (profile: UpdateProfileInput) => {
+    if (!canOnboard || isSaving) return;
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      await updateMyProfile(profile);
+      router.push("/dashboard", { transitionTypes: ["nav-modal-out"] });
+    } catch {
+      const message = "保存失败，请重试";
+      setSaveError(message);
+      toast.error(message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const next = () => {
     if (step === 1) setStep(2);
-    else router.push("/dashboard", { transitionTypes: ["nav-modal-out"] });
+    else {
+      void saveAndContinue({
+        jobDirection: job,
+        techStacks: skills,
+        experienceLevel: experienceLevelByOption[exp],
+        status: "ACTIVE",
+        targetCompany: targetCompany.trim() || null,
+        preferences: {},
+      });
+    }
+  };
+
+  const skip = () => {
+    void saveAndContinue({
+      jobDirection: null,
+      techStacks: [],
+      experienceLevel: null,
+      status: null,
+      targetCompany: null,
+      preferences: {},
+    });
   };
 
   return (
@@ -112,6 +188,8 @@ export default function OnboardingPage() {
                 目标公司类型 <span className="font-normal text-[#a3a3a3]">(选填)</span>
               </div>
               <input
+                value={targetCompany}
+                onChange={(event) => setTargetCompany(event.target.value)}
                 placeholder="如：一线大厂 / 外企 / 创业公司"
                 className="mira-field mb-5 w-full rounded-[10px] border border-[#e5e5e5] bg-white px-3.5 py-3 text-sm outline-none"
               />
@@ -125,14 +203,15 @@ export default function OnboardingPage() {
             <span className={`block h-[7px] rounded-full transition-all ${step === 2 ? "w-[22px] bg-orange-500" : "w-[7px] bg-[#e5e5e5]"}`} />
           </div>
           <div className="flex gap-2.5">
-            <button onClick={() => router.push("/dashboard", { transitionTypes: ["nav-modal-out"] })} className="mira-button rounded-[9px] px-4 py-2.5 text-[13.5px] text-[#a3a3a3]">
-              跳过
+            <button disabled={!canOnboard || isSaving} onClick={skip} className="mira-button rounded-[9px] px-4 py-2.5 text-[13.5px] text-[#a3a3a3] disabled:cursor-not-allowed disabled:opacity-60">
+              {isSaving ? "保存中…" : "跳过"}
             </button>
-            <button onClick={next} className="mira-button rounded-[10px] bg-orange-500 px-[22px] py-2.5 text-sm font-medium text-white">
-              {step === 1 ? "下一步 →" : "进入工作台 →"}
+            <button disabled={!canOnboard || isSaving} onClick={next} className="mira-button rounded-[10px] bg-orange-500 px-[22px] py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">
+              {isSaving ? "保存中…" : step === 1 ? "下一步 →" : "进入工作台 →"}
             </button>
           </div>
         </div>
+        {saveError && <p role="alert" className="m-0 bg-red-50 px-7 pb-4 text-sm text-red-600 md:px-9">{saveError}</p>}
       </div>
     </div>
     </AuthGuard>
