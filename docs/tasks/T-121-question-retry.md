@@ -1,8 +1,8 @@
-# T-084 · 「重练此题」迷你练习
+# T-121 · 「重练此题」迷你练习
 
 | 轨道 | 里程碑 | 预估 | 依赖 | 阻塞 |
 |---|---|---|---|---|
-| Full-stack | M3 | 1.5d | T-040, T-052 | — |
+| Full-stack | M3 | 1.5d | T-040, T-101, T-105, T-108 | — |
 
 ## 背景
 报告页每题有「重练此题」入口（PRD §3.8，可先占位）。本任务实现单题迷你练习模式。
@@ -15,13 +15,14 @@
 - **不做**：完整多题面试（已有）；练习历史沉淀可最小化。
 
 ## 技术规格
-- 复用 T-040 的对话链路，但会话类型标记为「单题练习」，只跑该 `questionId` 的问答 + 追问，不走完整状态机。
+- 复用 T-101 面试 LangGraph 的**追问子图**（提问→评估→追问/结束的循环子图），组装成只含单题的迷你图，不走完整阶段状态机；会话类型标记为「单题练习」，checkpointer `thread_id` 用 practice sessionId。
+- 即时评分复用 T-105 的**单题批改 chain**（`QuestionReview` 结构化输出），不重写评分逻辑。
 - 后端：`POST /interviews/{sessionId}/questions/{questionId}/retry` → 建练习子会话，返回 practice sessionId；结束后给该题的即时评分与对比。
 - 前端：从报告逐题卡「重练此题」进入精简练习页（复用输入区/流式），结束展示「本次 vs 上次」对比。
 
 ## 涉及文件
 - 后端 `interview/PracticeController.java` + service（复用面试基础设施）
-- AI 侧复用 T-040/T-050 的单题子集
+- AI 侧：复用 `interview_agent` 的追问子图 + `grading` 的单题 chain（若子图当前不可独立复用，先在 T-101 产物上做小幅抽取，禁止复制粘贴对话逻辑）
 - 前端 `src/app/practice/[sessionId]/page.tsx` 或复用面试组件精简模式；报告卡按钮接入
 
 ## 验收标准

@@ -1,8 +1,8 @@
-# T-042 · 前端面试进行页接 SSE（文字模式）
+# T-104 · 前端面试进行页接 SSE（文字模式）
 
 | 轨道 | 里程碑 | 预估 | 依赖 | 阻塞 |
 |---|---|---|---|---|
-| Frontend | M1 | 2d | T-005, T-040（+T-041 恢复） | T-072（语音在此之上叠加） |
+| Frontend | M1 | 2d | T-005, T-040（+T-103 恢复） | T-114（语音在此之上叠加） |
 
 ## 背景
 `src/components/interview/InterviewClient.tsx` 目前用本地 `questions` 数组模拟问答，无真实对话。本任务接 T-040 的 SSE 流式对话（文字模式）。先读 PRD §3.6、`DEVELOPMENT.md §7.2`。
@@ -12,7 +12,7 @@
 
 ## 范围
 - **做**：SSE 订阅与 envelope 处理（token 流式渲染、phase_change 更新阶段、interview_end 跳转）、提交回答 `POST /answer`、聊天流 UI（面试官左/用户右、自动滚动 + 「回到最新」）、阶段指示条（PRD 阶段）、「正在思考」占位、断线重连（按 seq）、刷新恢复（拉 `GET /messages`）、结束二次确认、`beforeunload` 防误触、现有「回看」抽屉接真实历史。
-- **不做**：语音模式（T-072，本任务保留 UI 但走文字链路，语音按钮可禁用/占位）；批改与报告（T-050/052）。
+- **不做**：语音模式（T-114，本任务保留 UI 但走文字链路，语音按钮可禁用/占位）；批改与报告（T-105/T-108）。
 
 ## 技术规格
 - 连接 `NEXT_PUBLIC_AI_STREAM_URL` 的 SSE（T-040 契约）；提交回答走 `POST /interviews/{id}/answer`。

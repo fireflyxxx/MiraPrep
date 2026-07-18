@@ -79,7 +79,9 @@
 
 ### FastAPI AI 服务
 - Python 3.12、FastAPI、Uvicorn、Pydantic v2
-- `anthropic` SDK（LLM，默认模型 `claude-sonnet-5`；复杂批改可用 `claude-opus-4-8`）
+- LLM 编排：**LangChain**（`langchain` + `langchain-anthropic`，模型层用 `ChatAnthropic`，默认模型 `claude-sonnet-5`；复杂批改可用 `claude-opus-4-8`）。所有 LLM 调用统一走 LCEL chain；结构化输出（简历解析/大纲/批改）用 `with_structured_output(PydanticModel)`，禁止手写 JSON 解析
+- Agent 编排：**LangGraph**（面试官 Agent 状态机用 `StateGraph`，会话态持久化用 `langgraph-checkpoint-redis`）
+- RAG：本地题库检索用 **LangChain retriever**（`Chroma` 本地向量库 + `HuggingFaceEmbeddings` bge-small-zh，见 T-122）
 - PDF/DOCX 解析：`pypdf` / `python-docx`（或 `unstructured`）
 - ASR/TTS：网关抽象层，先接一家（Whisper 或云厂商），实现可替换
 - 包管理：`uv`（优先）或 `poetry`
@@ -197,7 +199,7 @@ JSON envelope，字段固定：
 { "type": "token|audio|asr_partial|phase_change|interview_end|error", "payload": {...}, "seq": 123 }
 ```
 - 断线重连以 `seq` 续传（客户端上报已收到的最大 seq）。
-- 详见 PRD §6.4 与任务 T-040 / T-072。
+- 详见 PRD §6.4 与任务 T-040 / T-114。
 
 ### 7.3 代码风格
 - 前端：ESLint（项目已配 `eslint.config.mjs`），`npm run lint` 必须零报错；组件用函数式；样式优先 Tailwind 工具类，复用值走 `globals.css` 的 `@theme` token。
@@ -240,10 +242,10 @@ JSON envelope，字段固定：
 
 | 里程碑 | 目标 | 覆盖任务 |
 |---|---|---|
-| **M1 基础闭环** | 认证、Onboarding、工作台首页、我的面试、简历上传解析、配置向导、**纯文字面试**、评级+基础报告 | T-001~006（基建）、T-010~012（认证）、T-020~022（简历）、T-030~032（配置/会话）、T-040~042（文字面试）、T-050~052（批改/报告）、T-060~061（工作台区） |
-| **M2 语音与体验** | 语音 ASR/TTS、面试官动画、深色模式、评级揭晓动效、雷达图 | T-070~074 |
-| **M3 增长与打磨** | 落地页完整版、报告导出/分享、历史对比、重练此题、第三方登录 | T-080~084 |
-| **横切** | 测试/CI、可观测、安全加固 | T-090~092（贯穿各阶段） |
+| **M1 基础闭环** | 认证、Onboarding、工作台首页、我的面试、简历上传解析、配置向导、**纯文字面试**、评级+基础报告 | T-001~006（基建）、T-010~012（认证）、T-020~022（简历）、T-030~032（配置/会话）、T-040 + T-101/T-103/T-104（文字面试）、T-105/T-106/T-108（批改/报告）、T-107/T-109（工作台区） |
+| **M2 语音与体验** | 语音 ASR/TTS、面试官动画、深色模式、评级揭晓动效、雷达图 | T-112~T-116 |
+| **M3 增长与打磨** | 落地页完整版、报告导出/分享、历史对比、重练此题、第三方登录、题库 RAG | T-117~T-122 |
+| **横切与上线** | 测试/CI、安全加固、部署发布、可观测 | T-102、T-110、T-111、T-123 |
 
 完整任务列表、依赖关系与推荐执行顺序见 [`tasks/README.md`](./tasks/README.md)。
 

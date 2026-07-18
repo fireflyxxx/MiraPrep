@@ -2,7 +2,7 @@
 
 | 轨道 | 里程碑 | 预估 | 依赖 | 阻塞 |
 |---|---|---|---|---|
-| Backend-Spring | M1 | 1.5d | T-004 | T-011, T-012, T-083 |
+| Backend-Spring | M1 | 1.5d | T-004 | T-011, T-012, T-120 |
 
 ## 背景
 实现用户认证与资料读写。这是所有需登录接口的前置。先读 `DEVELOPMENT.md §7.1/§7.5`、PRD §3.2/§3.3。
@@ -12,7 +12,7 @@
 
 ## 范围
 - **做**：AuthController/Service、JWT 工具、密码 bcrypt、Spring Security 配置（JWT 过滤器、白名单）、User/UserProfile 的读写、验证码发送（可先接口打通 + 控制台打印/mock 邮件）、限流（登录、发码）。
-- **不做**：第三方 OAuth（T-083）；前端联调（T-011）。
+- **不做**：第三方 OAuth（T-120）；前端联调（T-011）。
 
 ## 技术规格（API 契约，前缀 `/api/v1`）
 统一响应包裹见 `DEVELOPMENT.md §7.1`。

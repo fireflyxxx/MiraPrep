@@ -1,19 +1,49 @@
+import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
+from app.clients.redis import get_redis
 from app.config import get_settings
 from app.logging import configure_logging, request_id_context
-from app.routers import health, internal
+from app.routers import health, internal, interview_stream
+from app.services.interview_agent import build_interview_event_stream_service
 
 configure_logging()
 logger = logging.getLogger("miraprep.ai")
 settings = get_settings()
 
-app = FastAPI(title="MiraPrep AI Service", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    maintenance_service = build_interview_event_stream_service()
+    maintenance_task = asyncio.create_task(_run_interview_maintenance(maintenance_service))
+    try:
+        yield
+    finally:
+        maintenance_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await maintenance_task
+        await maintenance_service.aclose()
+        await get_redis().aclose()
+        get_redis.cache_clear()
+
+
+async def _run_interview_maintenance(service: object) -> None:
+    while True:
+        try:
+            await service.run_maintenance_once()  # type: ignore[attr-defined]
+        except Exception:
+            logger.exception("interview maintenance sweep failed")
+        await asyncio.sleep(2)
+
+
+app = FastAPI(title="MiraPrep AI Service", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -23,6 +53,8 @@ app.add_middleware(
 )
 app.include_router(health.router)
 app.include_router(internal.router)
+app.include_router(interview_stream.internal_router)
+app.include_router(interview_stream.router)
 
 
 @app.middleware("http")

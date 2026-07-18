@@ -7,6 +7,8 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from langchain_core.exceptions import OutputParserException
+from langchain_core.runnables import RunnableLambda
 from pydantic import ValidationError
 
 from app.main import app
@@ -16,7 +18,6 @@ from app.schemas.outline import InterviewPhase, OutlineRequest
 from app.services.outline import (
     OutlineGenerationService,
     _extract_resume_facts,
-    _strip_markdown_fence,
     build_phase_budget,
 )
 
@@ -50,12 +51,20 @@ class RecordingLlm:
         self.messages: list[dict[str, Any]] | None = None
         self.closed = False
 
-    async def complete(self, messages: list[dict[str, Any]], *, system: str | None = None) -> str:
-        self.messages = messages
-        self.system = system
-        if isinstance(self.output, Exception):
-            raise self.output
-        return self.output
+    def with_structured_output(self, schema):  # type: ignore[no-untyped-def]
+        async def parse(prompt_value):  # type: ignore[no-untyped-def]
+            prompt_messages = prompt_value.to_messages()
+            self.system = str(prompt_messages[0].content)
+            self.messages = [{"role": "user", "content": str(prompt_messages[-1].content)}]
+            if isinstance(self.output, Exception):
+                raise self.output
+            try:
+                data = json.loads(self.output)
+            except json.JSONDecodeError as exc:
+                raise OutputParserException("invalid structured output") from exc
+            return schema.model_validate(data)
+
+        return RunnableLambda(parse)
 
     async def aclose(self) -> None:
         self.closed = True
@@ -183,22 +192,8 @@ def test_interview_phase_vocabulary_is_frozen() -> None:
     ]
 
 
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        ('{"questions": []}', '{"questions": []}'),
-        ('  {"questions": []}  ', '{"questions": []}'),
-        ('```json\n{"questions": []}\n```', '{"questions": []}'),
-        ('```JSON\n{"questions": []}\n```', '{"questions": []}'),
-        ('```\n{"questions": []}\n```', '{"questions": []}'),
-    ],
-)
-def test_strip_markdown_fence_handles_common_llm_wrappers(raw: str, expected: str) -> None:
-    assert _strip_markdown_fence(raw) == expected
-
-
 @pytest.mark.asyncio
-async def test_service_parses_llm_output_wrapped_in_json_fence() -> None:
+async def test_service_rejects_non_structured_markdown_output() -> None:
     request = OutlineRequest.model_validate(_request_data(30))
     llm = RecordingLlm(f"```json\n{_valid_outline(request)}\n```")
     callback = RecordingCallback()
@@ -207,7 +202,10 @@ async def test_service_parses_llm_output_wrapped_in_json_fence() -> None:
     await service.generate_outline(request)
 
     assert len(callback.calls) == 1
-    assert callback.calls[0]["json"]["status"] == "ready"
+    assert callback.calls[0]["json"] == {
+        "status": "failed",
+        "error": "llm returned invalid json",
+    }
 
 
 def test_prompt_keeps_user_controlled_content_out_of_system_instructions() -> None:
@@ -345,10 +343,10 @@ async def test_service_failed_callback_for_unexpected_error(
     callback = RecordingCallback()
     service = OutlineGenerationService(llm=llm, callback=callback)
 
-    def unexpected(_: str) -> dict[str, Any]:
+    def unexpected(*_: Any) -> None:
         raise RuntimeError("unexpected parser failure")
 
-    monkeypatch.setattr("app.services.outline.json.loads", unexpected)
+    monkeypatch.setattr("app.services.outline._validate_outline", unexpected)
 
     await service.generate_outline(request)
 

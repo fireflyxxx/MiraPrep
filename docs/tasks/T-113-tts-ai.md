@@ -1,8 +1,8 @@
-# T-071 · TTS：面试官文本流式语音合成
+# T-113 · TTS：面试官文本流式语音合成
 
 | 轨道 | 里程碑 | 预估 | 依赖 | 阻塞 |
 |---|---|---|---|---|
-| Backend-AI | M2 | 1.5d | T-040 | T-072 |
+| Backend-AI | M2 | 1.5d | T-040, T-101 | T-114 |
 
 ## 背景
 面试官文本流式合成语音播报，句级切分降低首音延迟。先读 PRD §5.4 TTS、`DEVELOPMENT.md §7.2`。
@@ -12,11 +12,11 @@
 
 ## 范围
 - **做**：TTS 网关抽象（先接一家）、句级切分流式合成、音频帧下行（与 `token` 文本流并行/对齐）、可静音（前端控制，本任务提供开关语义）。
-- **不做**：ASR（T-070）；前端播放 UI（T-072）。
+- **不做**：ASR（T-112）；前端播放 UI（T-114）。
 
 ## 技术规格
 - WS 下行 `{type:"audio", payload:{chunk, format, forQuestionId}, seq}`，与面试官 `token` 文本流对应。
-- TTS 抽象 `app/services/tts/base.py` + 一个实现，配置 `TTS_PROVIDER` 可切。
+- TTS 抽象 `app/services/tts/base.py` + 一个实现，配置 `TTS_PROVIDER` 可切。**TTS 网关不迁 LangChain**，保持独立抽象层；句切分的文本源接 T-101 LangGraph 的 token 流。
 - 句级切分：面试官输出按句边界切，逐句合成推送，首句尽快出（目标首字 < 1.5s）。
 - 静音：前端可请求不合成（省算力），本任务读取会话/请求里的 voice 开关。
 

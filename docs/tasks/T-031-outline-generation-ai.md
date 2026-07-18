@@ -27,6 +27,7 @@
 - `interviewerStyle` 影响提示语气；`customRequirements` 作为软约束（如「少问算法」）。
 - 回调：`POST {business_callback_url}/interviews/{sessionId}/outline-result` body 见 T-030 契约（`status:ready, questions[]`）。失败回调 `failed`。
 - Prompt 放 `app/prompts/outline.py`。
+- 实现形态：LangChain LCEL chain（`ChatPromptTemplate | ChatAnthropic.with_structured_output(OutlineResult)`）；chain 中预留「候选题上下文」输入槽位，T-122 会在此注入题库 RAG 检索结果（本任务先传空）。
 
 ## 涉及文件
 - `app/routers/internal.py`（outline 路由）

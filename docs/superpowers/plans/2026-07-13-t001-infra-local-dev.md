@@ -214,7 +214,7 @@ services:
       start_period: 20s
 
   redis:
-    image: redis:7
+    image: redis:8
     command: redis-server --appendonly yes
     ports:
       - "6379:6379"

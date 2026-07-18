@@ -1,22 +1,22 @@
-# T-052 · 前端评级页 + 报告页联调
+# T-108 · 前端评级页 + 报告页联调
 
 | 轨道 | 里程碑 | 预估 | 依赖 | 阻塞 |
 |---|---|---|---|---|
-| Frontend | M1 | 1.5d | T-005, T-006, T-051, T-060 | T-073（动效增强）, T-084 |
+| Frontend | M1 | 1.5d | T-005, T-006, T-106, T-107 | T-116（动效增强）, T-121 |
 
 ## 背景
-`interview/[sessionId]/result/page.tsx` 与 `components/report/ReportClient.tsx` 目前用 mock。本任务接 T-051 的报告/评级数据，并加雷达图。先读 PRD §3.7/§3.8。
+`interview/[sessionId]/result/page.tsx` 与 `components/report/ReportClient.tsx` 目前用 mock。本任务接 T-106 的报告/评级数据，并加雷达图。先读 PRD §3.7/§3.8。
 
 ## 目标
 评级页与报告页从真实 API 渲染；报告含五维雷达图、逐题详情卡（展开）、参考答案、建议、追问链、耗时。
 
 ## 范围
 - **做**：评级页接 `GET /reports/{sessionId}`（评级徽章、总分、关键数据、亮点/不足）、报告页接同接口（摘要区 + 雷达图 + 逐题卡）、雷达图用 Recharts、逐题卡展开/收起接真实数据、评级色按 token（T-006）、加载骨架屏、错误/空态、partial 报告标注。
-- **不做**：PDF 导出/分享/历史对比（T-081/082）；重练此题（T-084，留占位入口）；揭晓仪式动效增强（T-073，本任务先用现有过渡）。
+- **不做**：PDF 导出/分享/历史对比（T-118/T-119）；重练此题（T-121，留占位入口）；揭晓仪式动效增强（T-116，本任务先用现有过渡）。
 
 ## 技术规格
-- 评级页字段对齐 T-051 `GET /reports/{sessionId}`；结果页现有环形评级、stats grid 复用，数据换真实。
-- 报告页：摘要区（评级/总分/岗位/日期/配置回显）、五维雷达（Recharts `RadarChart`，可叠加历史均值——复用 T-060 的 `useOverviewStats`，读取 `dimensionScores`）、逐题卡（题目/我的回答/单题分颜色条/耗时对比/参考答案可展开/追问链缩进时间线/改进建议）。
+- 评级页字段对齐 T-106 `GET /reports/{sessionId}`；结果页现有环形评级、stats grid 复用，数据换真实。
+- 报告页：摘要区（评级/总分/岗位/日期/配置回显）、五维雷达（Recharts `RadarChart`，可叠加历史均值——复用 T-107 的 `useOverviewStats`，读取 `dimensionScores`）、逐题卡（题目/我的回答/单题分颜色条/耗时对比/参考答案可展开/追问链缩进时间线/改进建议）。
 - 评级色用 T-006 的 `grade-*` token。数字用 `tabular-nums`。
 - 骨架屏（PRD §4.6，禁止 CLS）。
 - 保留现有报告页展开/收起与过渡。
