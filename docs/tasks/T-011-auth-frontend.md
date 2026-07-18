@@ -2,7 +2,7 @@
 
 | 轨道 | 里程碑 | 预估 | 依赖 | 阻塞 |
 |---|---|---|---|---|
-| Frontend | M1 | 1.5d | T-005, T-010 | T-012, T-060, T-083, 及所有需登录页面的真实访问 |
+| Frontend | M1 | 1.5d | T-005, T-010 | T-012, T-107, T-120, 及所有需登录页面的真实访问 |
 
 ## 背景
 `/auth` 页面目前点击直接跳 dashboard/onboarding，无真实登录；`DashboardShell` 的昵称、邮箱、岗位、退出登录也仍为 mock。任务接 T-010 的认证 API，并统一保护工作台区新增的 `/interviews`、`/practice` 路由。先读 `DEVELOPMENT.md §7.1`、PRD §3.2/§3.4。
@@ -12,7 +12,7 @@
 
 ## 范围
 - **做**：登录/注册表单接 API（用 T-005 的 client + React Query mutation）、验证码发送与 60s 倒计时、密码强度提示、邮箱格式校验、错误内联 + toast、登录后跳转分流、受保护路由守卫、`GET /users/me`/profile 查询、`DashboardShell` 真实昵称/邮箱/岗位、真实 logout、已登录访问 `/` 时导航「登录」变「进入工作台」。
-- **不做**：第三方登录按钮仅保留占位（T-083）；onboarding 写入由 T-012 完成；账户设置/通知偏好仍为占位；本月额度没有后端计费契约，M1 必须隐藏或明确标为演示数据，不得伪装成真实额度。
+- **不做**：第三方登录按钮仅保留占位（T-120）；onboarding 写入由 T-012 完成；账户设置/通知偏好仍为占位；本月额度没有后端计费契约，M1 必须隐藏或明确标为演示数据，不得伪装成真实额度。
 
 ## 技术规格
 - 用 T-005 的 `apiClient` + React Query。登录/注册用 `useMutation`；成功写入 token（`useAuthToken`），跳转按响应 `user.isFirstLogin`。

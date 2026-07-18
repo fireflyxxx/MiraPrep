@@ -18,6 +18,8 @@ import httpx
 import pytest
 from docx import Document
 from fastapi import BackgroundTasks
+from langchain_core.exceptions import OutputParserException
+from langchain_core.runnables import RunnableLambda
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
@@ -33,35 +35,29 @@ from app.services.resume_parse import MAX_FILE_BYTES, ResumeParseService
 # ---------- helpers ----------
 
 
-class StubMessages:
-    """模拟 Anthropic SDK 的 messages.create。
+class StubStructuredChatModel:
+    """模拟 LangChain 的结构化 chat model，并保留 prompt 断言入口。"""
 
-    通过设置 stub.next_output 来控制下一次返回什么字符串。
-    """
-
-    def __init__(self, parent: "StubAnthropicClient") -> None:
-        self._parent = parent
-
-    async def create(self, **kwargs):  # type: ignore[no-untyped-def]
-        # 记录 system prompt 和 user prompt，便于断言
-        self._parent.last_system = kwargs.get("system")
-        self._parent.last_messages = kwargs.get("messages")
-        output = self._parent.next_output
-        if isinstance(output, Exception):
-            raise output
-        return type(
-            "Message",
-            (),
-            {"content": [type("TextBlock", (), {"type": "text", "text": output})()]},
-        )()
-
-
-class StubAnthropicClient:
     def __init__(self) -> None:
         self.next_output: str | Exception = ""
         self.last_system: str | None = None
         self.last_messages: list[dict[str, Any]] | None = None
-        self.messages = StubMessages(self)
+
+    def with_structured_output(self, schema):  # type: ignore[no-untyped-def]
+        async def parse(prompt_value):  # type: ignore[no-untyped-def]
+            messages = prompt_value.to_messages()
+            self.last_system = str(messages[0].content)
+            self.last_messages = [{"role": "user", "content": str(messages[-1].content)}]
+            output = self.next_output
+            if isinstance(output, Exception):
+                raise output
+            try:
+                data = json.loads(output)
+            except json.JSONDecodeError as exc:
+                raise OutputParserException("invalid structured output") from exc
+            return schema.model_validate(data)
+
+        return RunnableLambda(parse)
 
 
 class RecordingCallbackClient(BusinessCallbackClient):
@@ -158,13 +154,15 @@ def _make_service(
     download_content: bytes | None = None,
     download_status: int = 200,
     download_raises: Exception | None = None,
-) -> tuple[ResumeParseService, StubAnthropicClient, RecordingCallbackClient, httpx.MockTransport]:
+) -> tuple[
+    ResumeParseService, StubStructuredChatModel, RecordingCallbackClient, httpx.MockTransport
+]:
     """组装一个 service，所有外部依赖都是 stub。"""
 
-    stub_anthropic = StubAnthropicClient()
-    stub_anthropic.next_output = llm_raises if llm_raises else llm_output
+    stub_model = StubStructuredChatModel()
+    stub_model.next_output = llm_raises if llm_raises else llm_output
 
-    llm = LlmClient(settings, client=stub_anthropic)
+    llm = LlmClient(settings, model=stub_model)
 
     # callback 端：记录调用
     recording = RecordingCallbackClient(settings)
@@ -184,7 +182,7 @@ def _make_service(
     http_client = httpx.AsyncClient(transport=download_transport)
 
     service = ResumeParseService(llm=llm, callback=recording, http_client=http_client)
-    return service, stub_anthropic, recording, download_transport
+    return service, stub_model, recording, download_transport
 
 
 @pytest.fixture
@@ -359,7 +357,7 @@ async def test_service_rejects_oversized_content_length_without_reading_body(
         )
 
     http_client = httpx.AsyncClient(transport=httpx.MockTransport(download_handler))
-    llm = LlmClient(settings, client=StubAnthropicClient())
+    llm = LlmClient(settings, model=StubStructuredChatModel())
     recording = RecordingCallbackClient(settings)
     service = ResumeParseService(llm=llm, callback=recording, http_client=http_client)
     try:
@@ -632,8 +630,8 @@ async def test_service_prompt_injection_defense(settings: Settings) -> None:
 
 
 @pytest.mark.asyncio
-async def test_service_llm_output_strips_markdown_fence(settings: Settings) -> None:
-    """LLM 输出包了 ```json 代码块也能清洗掉。"""
+async def test_service_rejects_non_structured_markdown_output(settings: Settings) -> None:
+    """迁移后由结构化模型负责 schema，不再手写修复 markdown 文本。"""
 
     docx_bytes = _make_docx_bytes("简历内容")
     raw_llm = "```json\n" + json.dumps({"basics": {"name": "赵六"}}) + "\n```"
@@ -648,8 +646,10 @@ async def test_service_llm_output_strips_markdown_fence(settings: Settings) -> N
         mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
 
-    assert recording.calls[0]["json"]["status"] == "success"
-    assert recording.calls[0]["json"]["parsedJson"]["basics"]["name"] == "赵六"
+    assert recording.calls[0]["json"] == {
+        "status": "failed",
+        "error": "llm returned invalid json",
+    }
 
 
 # ---------- router 层测试 ----------

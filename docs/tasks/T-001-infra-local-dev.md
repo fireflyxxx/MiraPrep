@@ -17,7 +17,7 @@
 ## 技术规格
 `infra/docker-compose.yml` 至少包含：
 - `mysql:8`，端口 `3306`，root 密码从 env，初始库 `miraprep`，挂载 `./mysql/init/*.sql`，数据卷持久化，字符集 `utf8mb4`。
-- `redis:7`，端口 `6379`，开 appendonly。
+- `redis:8`，端口 `6379`，开 appendonly；内置 RedisJSON 与 Redis Search，供 LangGraph checkpoint 使用。
 - `minio`（`minio/minio`），API `9000`、Console `9001`，默认账号从 env，`entrypoint` 或伴随 `mc` 容器创建 bucket `miraprep`（私有）。
 
 产出的 `.env.example`：

@@ -1,6 +1,6 @@
 # MiraPrep AI 服务
 
-FastAPI 服务负责 AI 推理与临时会话状态，不保存业务数据；解析、出题、面试与批改任务会在后续阶段加入。
+FastAPI 服务负责 AI 推理与临时会话状态，不保存业务数据；当前已包含简历解析、面试大纲生成和文字面试运行时。T-101 后，模型调用统一经 LangChain，面试决策由 LangGraph `StateGraph` 编排；批改算法由后续 T-105 接入。
 
 ## 本地运行
 
@@ -14,6 +14,23 @@ uv run uvicorn app.main:app --port 8000
 ```
 
 访问 `http://localhost:8000/docs` 查看 OpenAPI；健康检查为 `GET /health`。`/internal/*` 端点必须携带与业务服务一致的 `X-Internal-Token`。
+
+## 文字面试运行时（T-040）
+
+文字模式采用「POST 提交动作 + GET 订阅 SSE」：Spring Boot 在大纲就绪后生成至少 32 字符的随机 `accessToken`，调用 `POST /internal/interviews/{sessionId}/start`，传入该令牌、`durationMin`、`interviewerStyle` 和带 `questionId/phase/text/focusPoints/order` 的题目。AI 服务只在 Redis 保存令牌的 SHA-256 摘要。
+
+前端使用 fetch 流订阅 `GET /interviews/{sessionId}/stream`，并在 stream、answer、end 三个运行时接口统一携带 `Authorization: Bearer <accessToken>`；不能把内部服务令牌交给浏览器。回答调用 `POST /interviews/{sessionId}/answer`，body 为 `{answerId, content, questionId?}`：`answerId` 是本轮唯一 ID，网络重试必须复用同一个值。手动结束调用 `POST /interviews/{sessionId}/end`。
+
+SSE 事件固定为 `{type, payload, seq}`。浏览器重连时发送 `Last-Event-ID`，或首次连接使用 `?afterSeq=123`，服务会从下一个 `seq` 开始回放；若请求的旧事件已被裁剪，会在建流前返回 409，客户端应从 Spring 持久化消息重新同步。会话状态、进行中的流式消息、完整对话历史、Spring 回调 outbox 和可回放事件保存在 Redis，默认保留 4 小时。后台维护循环不依赖 SSE 连接，会推进超时会话，并以有界退避重试消息回调和批改请求；批改请求携带稳定的幂等 ID，具体算法由 T-105 接入。
+
+## LangChain / LangGraph（T-101）
+
+- 简历解析和大纲生成使用 `ChatPromptTemplate | ChatAnthropic.with_structured_output(...)`，模型结果直接进入现有 Pydantic schema；不再手写清洗或修复 JSON。
+- 大纲 chain 预留 `candidate_questions` 输入，T-122 可在不改输出契约的前提下注入 RAG 候选题。
+- 面试每轮回答进入 `StateGraph`：`evaluate_answer` 结构化评估后，通过条件边路由至追问、提示、澄清、拉回主线、下一题或终止；追问深度在图内强制不超过 3。
+- 图以 `sessionId` 作为 `thread_id` 写入 `AsyncRedisSaver`，checkpoint TTL 为 4 小时；SSE `seq`、重放日志、幂等 ID 和回调 outbox 仍由原有 Redis 元数据层负责。
+
+`langgraph-checkpoint-redis` 需要 RedisJSON 和 RediSearch。开发/部署环境应使用 Redis 8+，或带这两个模块的 Redis Stack；纯 `redis:7` 镜像不满足 checkpoint 初始化要求。
 
 ## 开发检查
 

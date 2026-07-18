@@ -12,7 +12,7 @@
 
 ## 范围
 - **做**：三步配置状态收集与校验、Step2 补齐 PRD 要求（JD 文本域、面试类型多选、难度）、Step3（补充要求、面试官风格、语音开关）、提交创建会话、过场页（「面试官正在阅读你的简历…」进度动画 + 轮询）、ready 后带真实 sessionId 跳转、失败处理。
-- **不做**：面试进行页本身（T-042）；简历上传组件（T-022 提供，复用）。
+- **不做**：面试进行页本身（T-104）；简历上传组件（T-022 提供，复用）。
 
 ## 技术规格
 - 提交 body 对齐 T-030 `POST /interviews`：`{resumeId, jobDirection, jobTitle?, jdText?, difficulty, types[], durationMin, customRequirements?, interviewerStyle, voiceEnabled}`。

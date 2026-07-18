@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections import Counter
-import json
 import logging
 from typing import Any
 
+from langchain_core.exceptions import OutputParserException
+from langchain_core.messages import SystemMessage
+from langchain_core.prompts import ChatPromptTemplate
 from pydantic import ValidationError
 
 from app.clients.business import BusinessCallbackClient
@@ -34,6 +36,25 @@ _HR_BUDGETS = {
 }
 
 
+def build_outline_chain(model: Any) -> Any:
+    """Build the LCEL outline chain and reserve the T-122 candidate-question slot."""
+
+    chat_model = getattr(model, "chat_model", model)
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            SystemMessage(content=SYSTEM_PROMPT),
+            (
+                "human",
+                "{interview_data}\n\n"
+                "以下候选题仅供参考，不得改变 schema 和阶段预算；为空时忽略：\n"
+                "<<<CANDIDATE_QUESTIONS_BEGIN>>>\n{candidate_questions}\n"
+                "<<<CANDIDATE_QUESTIONS_END>>>",
+            ),
+        ]
+    )
+    return prompt | chat_model.with_structured_output(OutlineResult)
+
+
 def build_phase_budget(duration_min: int, interview_types: list[str]) -> dict[InterviewPhase, int]:
     """根据时长和面试类型生成稳定、可验证的阶段题量。"""
 
@@ -56,32 +77,28 @@ class OutlineGenerationService:
         try:
             budget = build_phase_budget(request.config.durationMin, request.config.types)
             try:
-                raw = await self._llm.complete(
-                    messages=[{"role": "user", "content": build_user_prompt(request, budget)}],
-                    system=SYSTEM_PROMPT,
+                result = await build_outline_chain(self._llm).ainvoke(
+                    {
+                        "interview_data": build_user_prompt(request, budget),
+                        "candidate_questions": "",
+                    }
                 )
-            except Exception:
-                logger.exception("outline llm call failed", extra={"session_id": request.sessionId})
-                await self._fail(request.sessionId, ERROR_LLM_CALL)
-                return
-
-            try:
-                data = json.loads(_strip_markdown_fence(raw))
-            except json.JSONDecodeError:
+            except OutputParserException:
                 logger.warning(
                     "outline llm returned invalid json", extra={"session_id": request.sessionId}
                 )
                 await self._fail(request.sessionId, ERROR_LLM_INVALID_JSON)
                 return
-
-            try:
-                result = OutlineResult.model_validate(data)
             except ValidationError:
                 logger.warning(
                     "outline llm schema validation failed",
                     extra={"session_id": request.sessionId},
                 )
                 await self._fail(request.sessionId, ERROR_LLM_SCHEMA_INVALID)
+                return
+            except Exception:
+                logger.exception("outline llm call failed", extra={"session_id": request.sessionId})
+                await self._fail(request.sessionId, ERROR_LLM_CALL)
                 return
 
             try:
@@ -127,16 +144,6 @@ class OutlineGenerationService:
                 await close()
             except Exception:
                 logger.exception("outline generation client close failed")
-
-
-def _strip_markdown_fence(raw: str) -> str:
-    cleaned = raw.strip()
-    if not cleaned.startswith("```"):
-        return cleaned
-    cleaned = cleaned.strip("`").strip()
-    if cleaned.lower().startswith("json"):
-        cleaned = cleaned[4:].strip()
-    return cleaned
 
 
 def _validate_outline(

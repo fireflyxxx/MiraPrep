@@ -1,43 +1,28 @@
 import httpx
 import pytest
+from langchain_core.messages import AIMessage, AIMessageChunk
 
 from app.clients.business import BusinessCallbackClient
 from app.clients.llm import LlmClient
 from app.config import Settings
 
 
-class FakeMessages:
+class FakeChatModel:
     def __init__(self) -> None:
-        self.last_request: dict[str, object] = {}
+        self.messages: list[object] = []
+        self.closed = False
 
-    async def create(self, **kwargs):  # type: ignore[no-untyped-def]
-        self.last_request = kwargs
-        if kwargs.get("stream"):
+    async def ainvoke(self, messages):  # type: ignore[no-untyped-def]
+        self.messages = messages
+        return AIMessage(content="Hello")
 
-            async def events():
-                yield type(
-                    "Event",
-                    (),
-                    {"type": "content_block_delta", "delta": type("Delta", (), {"text": "Hel"})},
-                )()
-                yield type(
-                    "Event",
-                    (),
-                    {"type": "content_block_delta", "delta": type("Delta", (), {"text": "lo"})},
-                )()
+    async def astream(self, messages):  # type: ignore[no-untyped-def]
+        self.messages = messages
+        yield AIMessageChunk(content="Hel")
+        yield AIMessageChunk(content="lo")
 
-            return events()
-
-        return type(
-            "Message",
-            (),
-            {"content": [type("TextBlock", (), {"type": "text", "text": "Hello"})()]},
-        )()
-
-
-class FakeAnthropicClient:
-    def __init__(self) -> None:
-        self.messages = FakeMessages()
+    async def aclose(self) -> None:
+        self.closed = True
 
 
 def test_settings_accepts_anthropic_compatible_base_url() -> None:
@@ -46,52 +31,62 @@ def test_settings_accepts_anthropic_compatible_base_url() -> None:
     assert settings.anthropic_base_url == "https://api.deepseek.com/anthropic"
 
 
-def test_llm_client_passes_configured_base_url_to_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_llm_client_passes_configuration_to_chat_anthropic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured: dict[str, object] = {}
 
-    class CapturingAnthropicClient:
+    class CapturingChatAnthropic:
         def __init__(self, **kwargs: object) -> None:
             captured.update(kwargs)
 
-    monkeypatch.setattr("app.clients.llm.AsyncAnthropic", CapturingAnthropicClient)
+    monkeypatch.setattr("app.clients.llm.ChatAnthropic", CapturingChatAnthropic)
 
-    LlmClient(Settings(anthropic_base_url="https://api.deepseek.com/anthropic"))
+    LlmClient(
+        Settings(
+            anthropic_base_url="https://api.deepseek.com/anthropic",
+            anthropic_max_tokens=4096,
+        )
+    )
 
     assert captured["base_url"] == "https://api.deepseek.com/anthropic"
+    assert captured["max_tokens"] == 4096
 
 
 @pytest.mark.asyncio
-async def test_llm_client_uses_configured_max_tokens() -> None:
-    fake_client = FakeAnthropicClient()
-    client = LlmClient(Settings(anthropic_max_tokens=4096), client=fake_client)
+async def test_llm_client_closes_injected_chat_model() -> None:
+    model = FakeChatModel()
+    client = LlmClient(Settings(), model=model)
 
-    await client.complete([{"role": "user", "content": "hello"}])
+    await client.aclose()
 
-    assert fake_client.messages.last_request["max_tokens"] == 4096
+    assert model.closed is True
 
 
 @pytest.mark.asyncio
-async def test_llm_client_closes_owned_sdk_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    class ClosableAnthropicClient:
-        closed = False
-
-        def __init__(self, **kwargs: object) -> None:
-            return None
+async def test_llm_client_closes_chat_anthropic_internal_async_client() -> None:
+    class RecordingAsyncClient:
+        def __init__(self) -> None:
+            self.closed = False
 
         async def close(self) -> None:
             self.closed = True
 
-    monkeypatch.setattr("app.clients.llm.AsyncAnthropic", ClosableAnthropicClient)
-    client = LlmClient(Settings())
+    class ChatModelWithoutPublicClose:
+        def __init__(self) -> None:
+            self._async_client = RecordingAsyncClient()
+
+    model = ChatModelWithoutPublicClose()
+    client = LlmClient(Settings(), model=model)
 
     await client.aclose()
 
-    assert client._client.closed is True
+    assert model._async_client.closed is True
 
 
 @pytest.mark.asyncio
 async def test_llm_client_returns_text_and_uses_configured_model() -> None:
-    client = LlmClient(Settings(), client=FakeAnthropicClient())
+    client = LlmClient(Settings(), model=FakeChatModel())
 
     result = await client.complete([{"role": "user", "content": "hello"}])
 
@@ -100,7 +95,7 @@ async def test_llm_client_returns_text_and_uses_configured_model() -> None:
 
 @pytest.mark.asyncio
 async def test_llm_client_yields_text_deltas() -> None:
-    client = LlmClient(Settings(), client=FakeAnthropicClient())
+    client = LlmClient(Settings(), model=FakeChatModel())
 
     result = [token async for token in client.stream([{"role": "user", "content": "hello"}])]
 

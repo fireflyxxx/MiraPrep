@@ -2,7 +2,7 @@
 
 | 轨道 | 里程碑 | 预估 | 依赖 | 阻塞 |
 |---|---|---|---|---|
-| Frontend | M1 | 2d | — | T-052, T-060, T-061, T-073, T-074, T-080 |
+| Frontend | M1 | 2d | — | T-108, T-107, T-109, T-116, T-115, T-117 |
 
 ## 背景
 现有页面里颜色/圆角/间距大量是内联硬编码（如 `#f97316`、`#0a0a0a`、`bg-[#fafafa]`）。PRD §4 要求语义化 token、深色模式、shadcn/ui 组件体系。本任务把设计体系正规化，但**保持现有视觉不回退**。先读 PRD §4 全节。
@@ -12,7 +12,7 @@
 
 ## 范围
 - **做**：在 `globals.css` 的 `@theme` 定义语义 token（含深浅两套，用 `prefers-color-scheme` + `.dark` class）、接 `next-themes`（跟随系统 + 手动切换）、初始化 shadcn/ui（Button/Input/Dialog/Tabs/Select/Toast/Skeleton/Card 等基础件）、提供 `ThemeToggle` 组件、把应用内页面（dashboard/interviews/practice/report/result/setup）和 `DashboardShell` 的核心硬编码色迁到 token。
-- **不做**：不重排版面、不改交互逻辑；面试进行页的深色主题细节留给 T-073；落地页大改留给 T-080（本任务只做 token 化不动结构）。
+- **不做**：不重排版面、不改交互逻辑；面试进行页的深色主题细节留给 T-116；落地页大改留给 T-117（本任务只做 token 化不动结构）。
 
 ## 技术规格
 - 色板取 PRD §4.2（注意：PRD 的品牌主色写的是靛蓝紫 `#6366F1`，但**现有设计稿与已实现页面用的是橙色 `#f97316` 系**。以「已实现的橙色」为准，把 `primary` 定义为橙色系；在 PR 里记录该冲突与决定，供产品确认）。
