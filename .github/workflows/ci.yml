@@ -1,0 +1,139 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - frontend
+      - backend
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: frontend
+            name: Frontend
+          - service: business
+            name: Spring
+          - service: ai
+            name: FastAPI
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        if: matrix.service == 'frontend'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        if: matrix.service == 'frontend'
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint frontend
+        if: matrix.service == 'frontend'
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Test frontend with coverage
+        if: matrix.service == 'frontend'
+        working-directory: frontend
+        run: npm run test:coverage
+
+      - name: Build frontend
+        if: matrix.service == 'frontend'
+        working-directory: frontend
+        run: npm run build
+
+      - name: Set up Java
+        if: matrix.service == 'business'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        if: matrix.service == 'business'
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - name: Check, test, and build Spring service
+        if: matrix.service == 'business'
+        working-directory: backend/business
+        run: ./gradlew clean check bootJar --no-daemon
+
+      - name: Set up uv
+        if: matrix.service == 'ai'
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/ai/uv.lock
+
+      - name: Install FastAPI dependencies
+        if: matrix.service == 'ai'
+        working-directory: backend/ai
+        run: uv sync --locked --dev
+
+      - name: Lint and format-check FastAPI service
+        if: matrix.service == 'ai'
+        working-directory: backend/ai
+        run: |
+          uv run ruff check .
+          uv run black --check .
+
+      - name: Compile FastAPI service
+        if: matrix.service == 'ai'
+        working-directory: backend/ai
+        run: uv run python -m compileall -q app
+
+      - name: Test FastAPI service with coverage
+        if: matrix.service == 'ai'
+        working-directory: backend/ai
+        run: uv run pytest --cov=app --cov-report=term-missing --cov-report=xml:coverage.xml --cov-report=html:htmlcov
+
+      - name: Upload frontend coverage
+        if: always() && matrix.service == 'frontend'
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload Spring coverage
+        if: always() && matrix.service == 'business'
+        uses: actions/upload-artifact@v7
+        with:
+          name: spring-coverage
+          path: backend/business/build/reports/jacoco/test
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload FastAPI coverage
+        if: always() && matrix.service == 'ai'
+        uses: actions/upload-artifact@v7
+        with:
+          name: fastapi-coverage
+          path: |
+            backend/ai/coverage.xml
+            backend/ai/htmlcov
+          if-no-files-found: warn
+          retention-days: 14
