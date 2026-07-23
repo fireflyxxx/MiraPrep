@@ -1,5 +1,7 @@
 # T-002 Spring Boot 业务服务脚手架 Implementation Plan
 
+> **历史快照**：本文记录任务实施时的计划，未勾选项不代表当前未完成。当前状态见 [任务总表](../../tasks/README.md) 与 [历史文档说明](../README.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在 `backend/business` 落地可运行、可测试的 Spring Boot 业务服务脚手架，提供统一响应、异常处理、CORS、内部令牌保护、健康检查和 Swagger。

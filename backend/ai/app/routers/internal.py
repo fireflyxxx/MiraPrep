@@ -1,13 +1,17 @@
 import logging
+from functools import lru_cache
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 
 from app.clients.business import BusinessCallbackClient
-from app.clients.llm import LlmClient
+from app.clients.llm import LlmClient, get_chat_model
+from app.clients.redis import get_redis
 from app.config import Settings, get_settings
 from app.deps import require_internal_token
+from app.schemas.grading import GradingAcceptedResponse, GradingRequest
 from app.schemas.outline import OutlineAcceptedResponse, OutlineRequest
 from app.schemas.resume import ResumeParseAcceptedResponse, ResumeParseRequest
+from app.services.grading import GradingService, GradingTaskQueue, RedisGradingJobStore
 from app.services.outline import OutlineGenerationService
 from app.services.resume_parse import ResumeParseService
 
@@ -53,6 +57,30 @@ def get_outline_service(
     settings: Settings = Depends(get_settings),
 ) -> OutlineGenerationService:
     return _build_outline_service(settings)
+
+
+@lru_cache
+def get_shared_grading_task_queue() -> GradingTaskQueue:
+    settings = get_settings()
+
+    def build_service() -> GradingService:
+        model = get_chat_model(
+            settings.anthropic_grading_model,
+            settings=settings,
+            thinking={"type": "disabled"},
+        )
+        return GradingService(LlmClient(settings, model=model))
+
+    return GradingTaskQueue(
+        store=RedisGradingJobStore(get_redis()),
+        grading_service_factory=build_service,
+        callback_factory=lambda: BusinessCallbackClient(settings),
+        max_delivery_attempts=settings.grading_max_delivery_attempts,
+    )
+
+
+def get_grading_task_queue() -> GradingTaskQueue:
+    return get_shared_grading_task_queue()
 
 
 @router.get("/ping")
@@ -103,3 +131,24 @@ async def generate_outline(
         )
     background_tasks.add_task(service.generate_outline, body)
     return OutlineAcceptedResponse(accepted=True)
+
+
+@router.post(
+    "/interviews/{session_id}/grade",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=GradingAcceptedResponse,
+)
+async def grade_interview(
+    session_id: int,
+    body: GradingRequest,
+    queue: GradingTaskQueue = Depends(get_grading_task_queue),
+) -> GradingAcceptedResponse:
+    """把批改请求持久化入队；相同 sessionId 重试仍返回已接受。"""
+
+    if session_id != body.sessionId:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="path session id must match body sessionId",
+        )
+    await queue.enqueue(body)
+    return GradingAcceptedResponse(accepted=True)

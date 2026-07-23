@@ -4,8 +4,12 @@
 |---|---|---|---|---|
 | Infra | 横切 | 2d | T-002, T-003, T-005 | 后续所有业务任务复用此测试基线 |
 
+## 实施状态（2026-07-24）
+
+**DONE**。已由提交 `1da4f60` 落地三服务测试脚手架与 `.github/workflows/ci.yml`；当前 CI 覆盖前端 lint/build/test、Spring `check` 与 FastAPI pytest，并在 `main`、`frontend`、`backend` 分支的 push/PR 上运行。后续业务任务继续复用该基线。
+
 ## 背景
-项目无测试与 CI。本任务在波次 1 建立三服务测试基线与 CI；不得拖到 M1 功能全部完成后再补，否则各联调任务只能依赖截图回归。
+本任务启动时项目尚无统一测试与 CI；以下内容保留为当时的任务契约。
 
 ## 目标
 建立测试约定与 CI：前端 lint+build+基础组件测试、Spring 单测+集成测试、FastAPI pytest；PR 触发流水线。

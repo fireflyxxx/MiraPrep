@@ -23,7 +23,7 @@
   { "items":[{
       "sessionId":"...", "jobTitle":"前端工程师", "difficulty":"medium",
       "durationMin":45, "actualDurationSeconds":2520, "questionCount":8,
-      "status":"created|ongoing|completed|aborted", "grade":"A-",
+      "status":"created|ongoing|completed|aborted", "grade":"A",
       "reportStatus":"none|grading|ready|failed",
       "createdAt":"...", "endedAt":"..."
     }], "total":7, "page":1, "size":20 }

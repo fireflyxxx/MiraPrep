@@ -11,7 +11,6 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -48,5 +47,5 @@ public class QuestionReview extends BaseAuditableEntity {
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "follow_up_chain_json")
-    private List<Map<String, Object>> followUpChainJson;
+    private List<Object> followUpChainJson;
 }

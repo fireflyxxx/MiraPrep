@@ -1,52 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MiraPrep 前端
 
-## Getting Started
+Next.js 16 App Router 前端，使用 React 19、TypeScript、Tailwind CSS v4、React Query 和 `next-themes`。
 
-First, run the development server:
+## 当前接入状态
 
-```bash
+| 页面/模块 | 数据状态 |
+|---|---|
+| 登录注册、路由守卫、初次引导 | 已接 Spring Boot |
+| 简历库、上传解析、默认简历、配置向导 | 已接 Spring Boot |
+| 文字面试进行页 | 已接 FastAPI SSE 与 Spring 消息恢复 |
+| 工作台统计、我的面试、评级结果、报告 | 仍有 mock，分别由 T-107~T-109 接入 |
+| 语音面试 | 占位 UI，T-112~T-114 接入 |
+
+`src/lib/mock-data.ts` 不是全局数据源，只为尚未联调的页面保留；新增功能不得继续扩大它的使用范围。
+
+## 本地运行
+
+从仓库根目录执行：
+
+```powershell
+Copy-Item frontend\.env.example frontend\.env.local
+Set-Location frontend
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+访问 `http://localhost:3000`。前端需要：
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```dotenv
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8080/api/v1
+NEXT_PUBLIC_AI_STREAM_URL=http://localhost:8000
+```
 
-## Development checks
+完整三服务启动流程见根目录 [README](../README.md#快速开始)。
 
-Run the same checks used by CI before opening a pull request:
+## 开发检查
 
-```bash
-npm ci
+以下命令与 CI 的前端检查一致：
+
+```powershell
+Set-Location frontend
 npm run lint
 npm test
 npm run test:coverage
 npm run build
 ```
 
-Vitest uses Testing Library and jsdom. Add or update tests whenever a change introduces
-new data, interaction, loading, or error branches. The HTML coverage report is written
-to `coverage/index.html`.
+Vitest 使用 Testing Library 与 jsdom。新增或修改数据、交互、加载、错误、重连分支时，必须同步补测试。HTML 覆盖率报告生成到 `coverage/index.html`。
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 关键目录
 
-## Learn More
+```text
+src/
+├── app/                 # App Router 页面
+├── components/          # 页面与共享组件
+└── lib/
+    ├── api/             # Spring/FastAPI 客户端、类型和 React Query hooks
+    ├── interview-options.ts
+    └── mock-data.ts     # 仅供待联调页面使用
+```
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+接口契约以 [`docs/tasks/`](../docs/tasks/README.md) 的对应任务文件为准；工程约定见 [`docs/DEVELOPMENT.md`](../docs/DEVELOPMENT.md)。

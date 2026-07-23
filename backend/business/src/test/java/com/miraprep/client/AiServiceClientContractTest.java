@@ -55,12 +55,42 @@ class AiServiceClientContractTest {
     }
 
     @Test
-    void interviewGradeRequestSerializesTheSessionId() throws Exception {
-        AiServiceClient.InterviewGradeRequest request = new AiServiceClient.InterviewGradeRequest(7L);
+    void interviewGradeRequestSerializesTheFrozenT105Contract() throws Exception {
+        AiServiceClient.InterviewGradeRequest request = new AiServiceClient.InterviewGradeRequest(
+                7L,
+                new AiServiceClient.InterviewOutlineConfig(
+                        "backend",
+                        "Java engineer",
+                        "JD",
+                        "medium",
+                        List.of("technical"),
+                        45,
+                        "Spring",
+                        "standard"),
+                new AiServiceClient.InterviewOutlineResume(Map.of("skills", List.of("Java"))),
+                List.of(new AiServiceClient.InterviewGradeTranscriptQuestion(
+                        11L,
+                        "domain_assessment",
+                        List.of("事务"),
+                        "如何保证回调幂等？",
+                        "使用行锁和唯一约束。",
+                        List.of(Map.of(
+                                "question", "如果并发到达呢？",
+                                "answer", "仍由数据库约束兜底。")))),
+                true);
 
         JsonNode body = objectMapper.readTree(objectMapper.writeValueAsBytes(request));
 
         assertThat(body.path("sessionId").asLong()).isEqualTo(7L);
+        assertThat(body.path("config").path("types").get(0).asText()).isEqualTo("technical");
+        assertThat(body.path("resume").path("parsedJson").path("skills").get(0).asText())
+                .isEqualTo("Java");
+        assertThat(body.path("transcript").get(0).path("questionId").asLong()).isEqualTo(11L);
+        assertThat(body.path("transcript").get(0).path("answer").asText())
+                .isEqualTo("使用行锁和唯一约束。");
+        assertThat(body.path("transcript").get(0).path("followUps").get(0).path("question").asText())
+                .isEqualTo("如果并发到达呢？");
+        assertThat(body.path("partial").asBoolean()).isTrue();
     }
 
     @Test

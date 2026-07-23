@@ -1,5 +1,7 @@
 # T-001 Local Infrastructure Implementation Plan
 
+> **历史快照**：本文记录 T-001 实施时的计划，未勾选项不代表当前未完成；Redis 7 已由后续 T-101 升级为 Redis 8。当前状态见 [任务总表](../../tasks/README.md) 与 [历史文档说明](../README.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Provide a repeatable Docker Compose environment for MiraPrep's MySQL, Redis, and private MinIO bucket, plus safe service configuration templates and startup documentation.
@@ -305,7 +307,7 @@ Insert this section after the existing frontend quick-start commands in `README.
 ```markdown
 ### 本地开发环境
 
-完整启动顺序见 [工程开发总纲 §5](docs/DEVELOPMENT.md#5-本地开发环境)。先启动基础设施：
+完整启动顺序见 [工程开发总纲 §5](../../DEVELOPMENT.md#5-本地开发环境)。先启动基础设施：
 
 ```bash
 cd infra

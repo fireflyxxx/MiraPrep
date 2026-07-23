@@ -18,10 +18,15 @@ import com.miraprep.client.AiServiceClient;
 import com.miraprep.domain.GradingStatus;
 import com.miraprep.domain.InterviewSession;
 import com.miraprep.domain.InterviewStatus;
+import com.miraprep.domain.Question;
+import com.miraprep.interview.QuestionRepository;
 import com.miraprep.interview.InterviewSessionRepository;
 import com.miraprep.interview.InterviewService;
 import com.miraprep.resume.ObjectStorageService;
+import com.miraprep.resume.ResumeRepository;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,6 +47,8 @@ class InterviewApiIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
     @Autowired private InterviewSessionRepository interviewSessionRepository;
+    @Autowired private QuestionRepository questionRepository;
+    @Autowired private ResumeRepository resumeRepository;
 
     @MockBean private ObjectStorageService objectStorageService;
     @MockBean private AiServiceClient aiServiceClient;
@@ -401,7 +408,22 @@ class InterviewApiIntegrationTest {
     @Test
     void manualEndAbortsSessionAndTriggersGradingOnlyOnce() throws Exception {
         String token = registerAndGetAccessToken();
-        long sessionId = createInterview(token, uploadResume(token, "manual-end.pdf"));
+        long resumeId = uploadResume(token, "manual-end.pdf");
+        var resume = resumeRepository.findById(resumeId).orElseThrow();
+        resume.setParsedJson(Map.of("skills", List.of("Java", "Spring")));
+        resumeRepository.save(resume);
+        long sessionId = createInterview(token, resumeId);
+        postOutlineCallback(sessionId, """
+                {"status":"ready","questions":[
+                  {"phase":"domain_assessment","text":"如何保证回调幂等？",
+                   "focusPoints":["事务","幂等"],"order":1,"suggestedSeconds":120}
+                ]}
+                """).andExpect(status().isOk());
+        Question question = questionRepository.findBySessionIdOrderBySortOrder(sessionId).get(0);
+        postMessage(sessionId, question.getId(), "interviewer", "如何保证回调幂等？", 1);
+        postMessage(sessionId, question.getId(), "candidate", "使用行锁。", 2);
+        postMessage(sessionId, question.getId(), "interviewer", "如果并发到达呢？", 3);
+        postMessage(sessionId, question.getId(), "candidate", "再用唯一约束兜底。", 4);
 
         String body = "{\"reason\":\"manual\"}";
         mockMvc.perform(post("/api/v1/interviews/{id}/end", sessionId)
@@ -420,9 +442,31 @@ class InterviewApiIntegrationTest {
                         .content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("aborted"));
+        mockMvc.perform(post("/api/v1/internal/interviews/{id}/grading-request", sessionId)
+                        .header("X-Internal-Token", "test-internal-token")
+                        .contentType("application/json")
+                        .content("""
+                                {"reason":"manual","requestId":"interview:%d:grading"}
+                                """.formatted(sessionId)))
+                .andExpect(status().isOk());
 
-        verify(aiServiceClient, times(1)).requestInterviewGrade(
-                org.mockito.ArgumentMatchers.argThat(request -> request.sessionId().equals(sessionId)));
+        var requestCaptor =
+                org.mockito.ArgumentCaptor.forClass(AiServiceClient.InterviewGradeRequest.class);
+        verify(aiServiceClient, times(1)).requestInterviewGrade(requestCaptor.capture());
+        AiServiceClient.InterviewGradeRequest gradingRequest = requestCaptor.getValue();
+        org.assertj.core.api.Assertions.assertThat(gradingRequest.sessionId()).isEqualTo(sessionId);
+        org.assertj.core.api.Assertions.assertThat(gradingRequest.partial()).isTrue();
+        org.assertj.core.api.Assertions.assertThat(gradingRequest.config().jobTitle())
+                .isEqualTo("Java engineer");
+        org.assertj.core.api.Assertions.assertThat(gradingRequest.resume().parsedJson())
+                .containsEntry("skills", List.of("Java", "Spring"));
+        org.assertj.core.api.Assertions.assertThat(gradingRequest.transcript()).hasSize(1);
+        org.assertj.core.api.Assertions.assertThat(gradingRequest.transcript().get(0).answer())
+                .isEqualTo("使用行锁。");
+        org.assertj.core.api.Assertions.assertThat(gradingRequest.transcript().get(0).followUps())
+                .containsExactly(Map.of(
+                        "question", "如果并发到达呢？",
+                        "answer", "再用唯一约束兜底。"));
         InterviewSession persisted = interviewSessionRepository.findById(sessionId).orElseThrow();
         org.assertj.core.api.Assertions.assertThat(persisted.getGradingStatus()).isEqualTo(GradingStatus.PENDING);
         org.assertj.core.api.Assertions.assertThat(persisted.getEndedAt()).isNotNull();
@@ -501,6 +545,23 @@ class InterviewApiIntegrationTest {
                 .header("X-Internal-Token", "test-internal-token")
                 .contentType("application/json")
                 .content(body));
+    }
+
+    private void postMessage(
+            long sessionId, long questionId, String role, String content, int seq) throws Exception {
+        mockMvc.perform(post("/api/v1/internal/interviews/{id}/messages", sessionId)
+                        .header("X-Internal-Token", "test-internal-token")
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "role":"%s",
+                                  "content":"%s",
+                                  "phase":"domain_assessment",
+                                  "questionId":%d,
+                                  "seq":%d
+                                }
+                                """.formatted(role, content, questionId, seq)))
+                .andExpect(status().isOk());
     }
 
     private org.springframework.test.web.servlet.ResultActions endInterview(

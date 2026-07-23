@@ -26,7 +26,11 @@
 - 每轮即时评估（完整性/深度/真实性信号）→ 决策：追问 / 提示 / 换题 / 进入下一阶段。**面试中不输出对错评价、不打分**。
 - 风格：`interviewerStyle` 调节追问概率与语气。
 - 计时：达到 `durationMin` 强制推进 CANDIDATE_QA 再 CLOSING。
-- 结束：CLOSING 完成或 `POST end` 或超时 → 以稳定 requestId 调用 T-105 批改入口（把会话完整问答交给批改）→ 原子落终态并发 `interview_end`。
+- 结束：CLOSING 完成或 `POST end` 或超时 → FastAPI 运行时以稳定 `requestId` 调用 Spring
+  `POST /api/v1/internal/interviews/{sessionId}/grading-request` → Spring 从持久化的简历、
+  大纲和消息组装 T-105 完整请求并调用批改入口 → FastAPI 原子落运行时终态并发送
+  `interview_end`。运行时不自行拼装业务事实，重复结束/重试由 Spring 的
+  `grading_status` 守卫去重。
 - 把「面试官消息 / 用户消息」通过事件同步给 Spring 落库（对接 T-103 约定的写入接口或消息通道）。
 - 防注入：简历/用户回答作为不可信数据。
 
@@ -43,7 +47,8 @@
 3. 计时到点强制进入反问→收尾。
 4. 边界样例：答非所问被礼貌拉回、用户反问被澄清不泄答案、不当内容被专业终止。
 5. 面试中**不出现打分/对错评价**。
-6. 结束触发批改调用点（可 mock T-105）。
+6. 结束会触发 Spring 的批改组装入口；自动结束、超时和手动结束均有 mock/集成测试，
+   重复触发不会重复创建批改任务。
 
 ## 验证方式
 PR 贴：一场完整面试的 SSE 事件序列（脱敏）、追问/边界样例、结束事件与批改触发日志。

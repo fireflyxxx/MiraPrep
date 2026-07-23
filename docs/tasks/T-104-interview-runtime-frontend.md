@@ -4,8 +4,12 @@
 |---|---|---|---|---|
 | Frontend | M1 | 2d | T-005, T-040（+T-103 恢复） | T-114（语音在此之上叠加） |
 
+## 实施状态（2026-07-24）
+
+**REVIEW**。实现已在当前 `backend` 分支提交 `b9d592c`：面试页已接真实会话、历史消息、SSE token 流、回答幂等提交、重连恢复与结束确认。代码与自动化检查已完成，仍需在发布前用真实三服务环境走完一场浏览器端面试并保留验收证据。
+
 ## 背景
-`src/components/interview/InterviewClient.tsx` 目前用本地 `questions` 数组模拟问答，无真实对话。本任务接 T-040 的 SSE 流式对话（文字模式）。先读 PRD §3.6、`DEVELOPMENT.md §7.2`。
+任务启动时 `src/components/interview/InterviewClient.tsx` 使用本地 `questions` 数组模拟问答；以下内容保留为实施契约。先读 PRD §3.6、`DEVELOPMENT.md §7.2`。
 
 ## 目标
 面试页接实时流：面试官问题流式打字呈现，用户提交文字回答，阶段指示随后端 `phase_change` 更新，支持断线重连与刷新恢复，结束跳评级页。
