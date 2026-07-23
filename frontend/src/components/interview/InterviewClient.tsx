@@ -1,418 +1,742 @@
 "use client";
 
-import { useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import Logo from "@/components/Logo";
-import { questions } from "@/lib/mock-data";
+import {
+  clearInterviewEventCursor,
+  clearInterviewRuntimeToken,
+  endInterviewRuntime,
+  getInterviewEventCursor,
+  getInterviewRuntimeToken,
+  getInterviewMessages,
+  streamInterview,
+  storeInterviewEventCursor,
+  submitInterviewAnswer,
+  type InterviewMessage,
+  type InterviewStreamEvent,
+} from "@/lib/api/interview-stream";
 
-type AnsweredItem = {
-  n: string;
-  q: string;
-  a: string;
+type ConnectionState = "connecting" | "connected" | "reconnecting" | "failed";
+
+type ChatMessage = InterviewMessage & {
+  key: string;
+  pending?: boolean;
+  streaming?: boolean;
 };
 
-function StageIcon({
-  loading,
-  mode,
-  recording,
-}: {
-  loading: boolean;
-  mode: "voice" | "text";
-  recording: boolean;
-}) {
-  const iconState = loading ? "loading" : mode;
+type PendingAnswer = {
+  answerId: string;
+  content: string;
+  questionId: string | number | null;
+};
 
+const phaseOrder = [
+  "GREETING",
+  "SELF_INTRO",
+  "RESUME_DEEP_DIVE",
+  "DOMAIN_ASSESSMENT",
+  "BEHAVIORAL",
+  "CANDIDATE_QA",
+  "CLOSING",
+] as const;
+
+const phaseLabels: Record<string, string> = {
+  GREETING: "开场",
+  SELF_INTRO: "自我介绍",
+  RESUME_DEEP_DIVE: "项目深挖",
+  DOMAIN_ASSESSMENT: "专业评估",
+  BEHAVIORAL: "行为面试",
+  CANDIDATE_QA: "候选人提问",
+  CLOSING: "收尾",
+};
+
+const reconnectDelays = [1_000, 2_000, 4_000, 8_000, 15_000];
+
+function normalizePhase(phase?: string | null): string {
+  return phase?.trim().toUpperCase() || "GREETING";
+}
+
+function newAnswerId(): string {
+  const random =
+    typeof globalThis.crypto?.randomUUID === "function"
+      ? globalThis.crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `answer-${random}`;
+}
+
+function sleep(delay: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(resolve, delay);
+    signal.addEventListener(
+      "abort",
+      () => {
+        window.clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
+}
+
+function StageIcon({ thinking }: { thinking: boolean }) {
   return (
-    <div className="relative mx-auto mb-[30px] h-[104px] w-[104px]">
-      <span className="animate-mira-pulse-slow absolute -inset-3.5 rounded-full border-[1.5px] border-[#ffe0cc]" />
-      <div
-        className="flex h-[104px] w-[104px] items-center justify-center rounded-full shadow-[0_12px_40px_-8px_rgba(249,115,22,0.35)] transition-all duration-500 ease-[cubic-bezier(.16,1,.3,1)]"
-        style={{ background: "radial-gradient(circle at 50% 35%,#fff3ea,#ffe0cc)" }}
-      >
-        <div key={iconState} className="animate-mira-icon-swap flex h-10 w-10 items-center justify-center">
-          {loading ? (
-            <span className="animate-mira-spin block h-8 w-8 rounded-full border-[3px] border-orange-500/25 border-t-orange-500" />
-          ) : mode === "voice" ? (
-            <div className="flex h-[30px] items-center gap-1">
-              <span className={`${recording ? "animate-mira-bar" : ""} block h-[45%] w-[5px] rounded-[3px] bg-orange-500`} />
-              <span className={`${recording ? "animate-mira-bar-2" : ""} block h-[80%] w-[5px] rounded-[3px] bg-orange-500`} />
-              <span className={`${recording ? "animate-mira-bar-4" : ""} block h-full w-[5px] rounded-[3px] bg-orange-500`} />
-              <span className={`${recording ? "animate-mira-bar-6" : ""} block h-[65%] w-[5px] rounded-[3px] bg-orange-500`} />
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1.5">
-              <span className="block h-[4px] w-8 rounded-full bg-orange-500" />
-              <span className="block h-[4px] w-6 rounded-full bg-orange-500/80" />
-              <span className="block h-[4px] w-7 rounded-full bg-orange-500/60" />
-            </div>
-          )}
-        </div>
+    <div className="relative h-14 w-14 shrink-0">
+      <span className="animate-mira-pulse-slow absolute inset-0 rounded-full border border-orange-200" />
+      <div className="absolute inset-1 flex items-center justify-center rounded-full bg-[radial-gradient(circle_at_50%_35%,#fff3ea,#ffe0cc)] shadow-[0_10px_28px_-10px_rgba(249,115,22,.55)]">
+        {thinking ? (
+          <span className="animate-mira-spin block h-5 w-5 rounded-full border-2 border-orange-500/25 border-t-orange-500" />
+        ) : (
+          <div className="flex h-5 items-center gap-0.5">
+            {[45, 85, 100, 65].map((height, index) => (
+              <span
+                key={height}
+                className={`block w-1 rounded-full bg-orange-500 ${
+                  index % 2 ? "animate-mira-bar-2" : "animate-mira-bar"
+                }`}
+                style={{ height: `${height}%` }}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-const voiceAnswerPreview =
-  "主要是因为跨层级的高频更新，Context 会引起较大范围重渲染。我当时选择额外状态库，是为了把订阅粒度控制得更细，同时让调试和状态回放更清楚。";
-
-const viewedHintsStorageKey = "miraprep:viewed-hints";
+function connectionLabel(state: ConnectionState): string {
+  switch (state) {
+    case "connected":
+      return "实时连接正常";
+    case "reconnecting":
+      return "连接中断，正在重连";
+    case "failed":
+      return "实时连接失败";
+    default:
+      return "正在连接面试官";
+  }
+}
 
 export default function InterviewClient({ sessionId }: { sessionId: string }) {
   const router = useRouter();
-  const [qIndex, setQIndex] = useState(0);
-  const [reviewOpen, setReviewOpen] = useState(false);
-  const [inputMode, setInputMode] = useState<"voice" | "text">("voice");
-  const [isRecording, setIsRecording] = useState(false);
-  const [hasRecorded, setHasRecorded] = useState(false);
+  const numericSessionId = Number(sessionId);
+  const validSessionId =
+    Number.isSafeInteger(numericSessionId) && numericSessionId > 0;
+  const [runtimeToken, setRuntimeToken] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [phase, setPhase] = useState("GREETING");
   const [answerText, setAnswerText] = useState("");
-  const [submittedAnswer, setSubmittedAnswer] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [answered, setAnswered] = useState<AnsweredItem[]>([]);
+  const [isLoading, setIsLoading] = useState(validSessionId);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
+  const [isEnded, setIsEnded] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [confirmEndOpen, setConfirmEndOpen] = useState(false);
-  const [viewedHints, setViewedHints] = useState<Set<number>>(new Set());
+  const [connection, setConnection] = useState<ConnectionState>(
+    validSessionId ? "connecting" : "failed",
+  );
+  const [errorMessage, setErrorMessage] = useState<string | null>(
+    validSessionId ? null : "无效的面试会话编号。",
+  );
+  const [connectionRetry, setConnectionRetry] = useState(0);
+  const [showLatest, setShowLatest] = useState(false);
+  const [pendingAnswer, setPendingAnswer] = useState<PendingAnswer | null>(null);
+  const lastEventSeqRef = useRef(0);
+  const endedRef = useRef(false);
+  const chatRef = useRef<HTMLDivElement>(null);
+  const requestControllerRef = useRef<AbortController | null>(null);
 
-  const total = questions.length;
-  const cur = questions[qIndex];
-  const qBig = qIndex + 1 < 10 ? `0${qIndex + 1}` : `${qIndex + 1}`;
-  const isBusy = isProcessing || isGenerating;
-  const canSubmit =
-    !isBusy && !isRecording && (inputMode === "voice" ? hasRecorded : answerText.trim().length > 0);
+  const currentQuestion = useMemo(
+    () =>
+      [...messages]
+        .reverse()
+        .find(
+          (message) =>
+            message.role === "interviewer" && message.questionId !== null,
+        ),
+    [messages],
+  );
 
-  const goResult = () =>
-    router.push(`/interview/${sessionId}/result`, { transitionTypes: ["nav-reveal"] });
+  const goResult = useCallback(() => {
+    if (endedRef.current) return;
+    endedRef.current = true;
+    setIsEnded(true);
+    clearInterviewRuntimeToken(numericSessionId);
+    clearInterviewEventCursor(numericSessionId);
+    router.push(`/interview/${sessionId}/result`, {
+      transitionTypes: ["nav-reveal"],
+    });
+  }, [numericSessionId, router, sessionId]);
 
-  const handleSubmitAnswer = () => {
-    if (!canSubmit) return;
+  const handleStreamEvent = useCallback(
+    (event: InterviewStreamEvent) => {
+      if (event.seq <= lastEventSeqRef.current) return;
+      lastEventSeqRef.current = event.seq;
+      storeInterviewEventCursor(numericSessionId, event.seq);
+      setConnection("connected");
 
-    const answer = inputMode === "voice" ? voiceAnswerPreview : answerText.trim();
-    setSubmittedAnswer(answer);
-    setAnswered((items) => [
-      ...items,
-      { n: `Q${qIndex + 1}`, q: cur.q, a: answer },
-    ]);
-    setIsProcessing(true);
-    setReviewOpen(false);
-
-    setTimeout(() => {
-      setIsProcessing(false);
-
-      if (qIndex >= total - 1) {
+      if (event.type === "phase_change") {
+        setPhase(normalizePhase(event.payload.to));
+        setMessages((items) =>
+          items.map((item) =>
+            item.streaming ? { ...item, streaming: false } : item,
+          ),
+        );
+        return;
+      }
+      if (event.type === "interview_end") {
         goResult();
         return;
       }
-
-      setIsGenerating(true);
-
-      setTimeout(() => {
-        setSubmittedAnswer(null);
-        setIsGenerating(false);
-        setQIndex((i) => i + 1);
-        setAnswerText("");
-        setHasRecorded(false);
-        setIsRecording(false);
-        window.scrollTo(0, 0);
-      }, 1150);
-    }, 1050);
-  };
-
-  const toggleRecording = () => {
-    if (isBusy) return;
-    setIsRecording((rec) => {
-      if (rec) {
-        setHasRecorded(true);
-        return false;
+      if (event.type === "error") {
+        setErrorMessage(
+          event.payload.message ??
+            event.payload.detail ??
+            "面试官暂时无法继续，请稍后重试。",
+        );
+        setIsThinking(false);
+        return;
       }
-      setHasRecorded(false);
-      return true;
-    });
-  };
 
-  const switchInputMode = (mode: "voice" | "text") => {
-    if (isBusy || mode === inputMode) return;
-    setIsRecording(false);
-    setInputMode(mode);
-  };
+      const eventPhase = normalizePhase(event.payload.phase);
+      setPhase(eventPhase);
+      setIsThinking(false);
+      setErrorMessage(null);
+      setMessages((items) => {
+        const last = items.at(-1);
+        if (
+          last?.role === "interviewer" &&
+          last.streaming &&
+          last.questionId === (event.payload.questionId ?? null)
+        ) {
+          return [
+            ...items.slice(0, -1),
+            {
+              ...last,
+              content: `${last.content}${event.payload.text}`,
+              seq: event.seq,
+            },
+          ];
+        }
+        return [
+          ...items.map((item) =>
+            item.streaming ? { ...item, streaming: false } : item,
+          ),
+          {
+            key: `stream-${event.seq}`,
+            role: "interviewer",
+            content: event.payload.text,
+            phase: eventPhase,
+            questionId: event.payload.questionId ?? null,
+            audioUrl: null,
+            seq: event.seq,
+            createdAt: new Date().toISOString(),
+            streaming: true,
+          },
+        ];
+      });
+    },
+    [goResult, numericSessionId],
+  );
 
-  const showHint = () => {
-    setViewedHints((cur) => {
-      const next = new Set(cur);
-      next.add(qIndex);
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(viewedHintsStorageKey, JSON.stringify(Array.from(next)));
+  useEffect(() => {
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
+
+    const run = async () => {
+      // 保证首屏 SSR 与客户端水合都从相同状态开始，再读取浏览器存储。
+      await Promise.resolve();
+      if (controller.signal.aborted) return;
+      if (!validSessionId) {
+        setIsLoading(false);
+        return;
       }
-      return next;
-    });
+      const storedToken = getInterviewRuntimeToken(numericSessionId);
+      lastEventSeqRef.current = getInterviewEventCursor(numericSessionId);
+      if (!storedToken) {
+        setErrorMessage("面试会话凭证不存在，请从面试配置页重新进入。");
+        setConnection("failed");
+        setIsLoading(false);
+        return;
+      }
+      setRuntimeToken(storedToken);
+      setErrorMessage(null);
+
+      try {
+        const restored = await getInterviewMessages(
+          numericSessionId,
+          0,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        const restoredMessages = restored.items
+          .slice()
+          .sort((left, right) => left.seq - right.seq)
+          .map((message) => ({
+            ...message,
+            key: `persisted-${message.seq}`,
+            phase: normalizePhase(message.phase),
+          }));
+        setMessages(restoredMessages);
+        const lastPhase = restoredMessages.at(-1)?.phase;
+        if (lastPhase) setPhase(normalizePhase(lastPhase));
+        setIsLoading(false);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setErrorMessage(
+          error instanceof Error
+            ? `历史恢复失败：${error.message}`
+            : "历史恢复失败，请刷新重试。",
+        );
+        setConnection("failed");
+        setIsLoading(false);
+        return;
+      }
+
+      let attempt = 0;
+      while (!controller.signal.aborted && !endedRef.current) {
+        try {
+          setConnection(attempt === 0 ? "connecting" : "reconnecting");
+          await streamInterview({
+            sessionId: numericSessionId,
+            runtimeToken: storedToken,
+            afterSeq: lastEventSeqRef.current,
+            signal: controller.signal,
+            onEvent: handleStreamEvent,
+          });
+        } catch {
+          if (controller.signal.aborted || endedRef.current) return;
+        }
+
+        if (controller.signal.aborted || endedRef.current) return;
+        attempt += 1;
+        if (attempt >= reconnectDelays.length) {
+          setConnection("failed");
+          return;
+        }
+        setConnection("reconnecting");
+        await sleep(reconnectDelays[attempt - 1], controller.signal);
+      }
+    };
+
+    void run();
+    return () => {
+      controller.abort();
+      if (requestControllerRef.current === controller) {
+        requestControllerRef.current = null;
+      }
+    };
+  }, [
+    connectionRetry,
+    handleStreamEvent,
+    numericSessionId,
+    validSessionId,
+  ]);
+
+  useEffect(() => {
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (endedRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, []);
+
+  useEffect(() => {
+    const container = chatRef.current;
+    if (!container || showLatest) return;
+    container.scrollTop = container.scrollHeight;
+  }, [messages, isThinking, showLatest]);
+
+  const handleChatScroll = () => {
+    const container = chatRef.current;
+    if (!container) return;
+    const distance =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    setShowLatest(distance > 100);
   };
 
-  const transcriptText = isRecording
-    ? "正在聆听你的回答…"
-    : hasRecorded
-      ? `实时转写：${voiceAnswerPreview}`
-      : "点击左侧麦克风，开始语音回答";
+  const scrollToLatest = () => {
+    const container = chatRef.current;
+    if (container) container.scrollTop = container.scrollHeight;
+    setShowLatest(false);
+  };
+
+  const handleSubmitAnswer = async () => {
+    const content = answerText.trim();
+    if (!content || isSubmitting || !runtimeToken) return;
+
+    const questionId = currentQuestion?.questionId ?? null;
+    const answer =
+      pendingAnswer?.content === content &&
+      pendingAnswer.questionId === questionId
+        ? pendingAnswer
+        : { answerId: newAnswerId(), content, questionId };
+    setPendingAnswer(answer);
+    setIsSubmitting(true);
+    setErrorMessage(null);
+
+    const localKey = `pending-${answer.answerId}`;
+    const controller = new AbortController();
+    try {
+      await submitInterviewAnswer(
+        numericSessionId,
+        answer,
+        runtimeToken,
+        controller.signal,
+      );
+      setMessages((items) => [
+        ...items.map((item) =>
+          item.streaming ? { ...item, streaming: false } : item,
+        ),
+        {
+          key: localKey,
+          role: "candidate",
+          content,
+          phase,
+          questionId,
+          audioUrl: null,
+          seq: lastEventSeqRef.current,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+      setPendingAnswer(null);
+      setAnswerText("");
+      setIsThinking(true);
+    } catch {
+      setErrorMessage("回答发送失败，请检查网络后重试。");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleManualEnd = async () => {
+    if (!runtimeToken) return;
+    setErrorMessage(null);
+    const controller = new AbortController();
+    try {
+      await endInterviewRuntime(
+        numericSessionId,
+        runtimeToken,
+        controller.signal,
+      );
+      setConfirmEndOpen(false);
+      goResult();
+    } catch {
+      setErrorMessage("结束请求发送失败，请检查网络后重试。");
+    }
+  };
+
+  const activePhaseIndex = Math.max(
+    0,
+    phaseOrder.indexOf(phase as (typeof phaseOrder)[number]),
+  );
 
   return (
-    <div className="flex min-h-screen flex-col bg-white text-[#0a0a0a]">
-      <div className="flex items-center justify-between border-b border-[#eee] px-5 py-5 md:px-7">
-        <div className="flex items-center gap-3.5">
-          <Logo />
-          <span className="h-[18px] w-px bg-[#e5e5e5]" />
-          <div className="text-[13.5px] font-medium">前端工程师 · 中级</div>
-        </div>
-        <div className="flex items-center gap-3 md:gap-5">
-          <span className="hidden font-display text-[13px] text-[#a3a3a3] sm:inline">
-            第 {qIndex + 1} 题 · {isGenerating ? "生成中" : isProcessing ? "处理中" : "进行中"}
-          </span>
-          <div className="flex items-center gap-[7px] rounded-[9px] bg-[#f5f5f5] px-3 py-1.5">
-            <span className="animate-mira-pulse block h-1.5 w-1.5 rounded-full bg-orange-500" />
-            <span className="font-display text-sm">14:32</span>
-          </div>
-          <button
-            onClick={() => setReviewOpen(true)}
-            className="mira-button rounded-[9px] border border-[#e5e5e5] bg-white px-4 py-2 text-[13px] text-[#0a0a0a]"
-          >
-            ↗ 回看
-          </button>
-          <button
-            onClick={() => setConfirmEndOpen(true)}
-            className="mira-button rounded-[9px] border border-[#e5e5e5] bg-white px-4 py-2 text-[13px] text-[#525252] hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-          >
-            结束面试
-          </button>
-        </div>
-      </div>
-
-      <div className="px-5 md:px-8">
-        <div className="mx-auto flex max-w-[900px] justify-center gap-[5px] pt-3.5">
-          {Array.from({ length: qIndex + 1 }).map((_, idx) => (
-            <span
-              key={idx}
-              className={`h-[5px] w-9 shrink-0 rounded-[3px] bg-orange-500 ${
-                idx === qIndex ? "animate-mira-segment-grow" : ""
-              }`}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="flex flex-1 items-center justify-center px-5 py-6 md:px-8">
-        <div key={qIndex} className="animate-mira-rise w-full max-w-[820px] text-center">
-          <StageIcon loading={isProcessing || isGenerating} mode={inputMode} recording={isRecording} />
-
-          <div className={`mb-4 font-display text-[13px] tracking-[0.05em] ${isGenerating ? "text-orange-500" : "text-[#a3a3a3]"}`}>
-            {isGenerating ? "MIRA AGENT 正在生成问题" : "MIRA 面试官正在提问"} · 问题 {qBig}
-          </div>
-          <h1 className="mx-auto mb-5 max-w-[720px] text-[24px] leading-[1.4] font-semibold tracking-[-0.01em] md:text-[32px]">
-            {cur.q}
-          </h1>
-          <button
-            onClick={showHint}
-            aria-expanded={viewedHints.has(qIndex)}
-            disabled={viewedHints.has(qIndex)}
-            className={`mira-button relative inline-flex min-h-10 items-center justify-center overflow-hidden rounded-full border border-[#f0f0f0] bg-[#fafafa] px-[18px] py-2 text-[13px] whitespace-nowrap text-[#737373] transition-[max-width,padding,border-color,background-color,box-shadow] duration-[850ms] ease-[cubic-bezier(.22,1,.36,1)] ${
-              viewedHints.has(qIndex)
-                ? "max-w-[min(620px,calc(100vw-48px))] cursor-default border-[#ffe0cc] bg-[#fff7f1] px-4 shadow-[0_12px_30px_-22px_rgba(249,115,22,.55)]"
-                : "max-w-[64px] cursor-pointer hover:border-[#ffe0cc] hover:bg-[#fff7f1]"
-            }`}
-          >
-            <span className="shrink-0 text-orange-500 transition-[transform,opacity] duration-300">
-              提示
+    <div className="flex h-dvh min-h-[620px] flex-col overflow-hidden bg-[#fafafa] text-[#0a0a0a]">
+      <header className="shrink-0 border-b border-[#eee] bg-white px-4 py-3.5 md:px-7">
+        <div className="mx-auto flex max-w-[1040px] items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <Logo />
+            <span className="hidden h-[18px] w-px bg-[#e5e5e5] sm:block" />
+            <span className="truncate text-[13px] font-medium text-[#525252]">
+              面试会话 #{sessionId}
             </span>
+          </div>
+          <div className="flex items-center gap-2 md:gap-3">
             <span
-              className={`overflow-hidden text-left transition-[max-width,opacity,transform,margin] duration-[650ms] ease-[cubic-bezier(.16,1,.3,1)] ${
-                viewedHints.has(qIndex)
-                  ? "ml-2 max-w-[520px] translate-x-0 opacity-100 delay-150"
-                  : "ml-0 max-w-0 translate-x-2 opacity-0"
+              className={`hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-xs sm:inline-flex ${
+                connection === "connected"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : connection === "failed"
+                    ? "bg-red-50 text-red-600"
+                    : "bg-orange-50 text-orange-600"
               }`}
             >
-              <span className="block truncate">{cur.hint}</span>
+              <span className="block h-1.5 w-1.5 rounded-full bg-current" />
+              {connectionLabel(connection)}
             </span>
-          </button>
-
-          {submittedAnswer && (
-            <div className="animate-mira-soft-pop mx-auto mt-8 max-w-[620px] text-center">
-              <div className="mb-2 font-display text-[12px] tracking-[0.05em] text-[#a3a3a3]">
-                你的回答
-              </div>
-              <p className="m-0 text-[17px] leading-relaxed font-medium text-[#404040] md:text-[19px]">
-                {submittedAnswer}
-              </p>
-              {(isProcessing || isGenerating) && (
-                <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#fafafa] px-4 py-2 text-[13px] text-[#737373]">
-                  <span className="animate-mira-pulse block h-1.5 w-1.5 rounded-full bg-orange-500" />
-                  {isProcessing ? "正在处理中" : "正在生成下一道追问"}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="border-t border-[#eee] bg-[#fcfcfc] px-5 pt-[18px] pb-[26px] md:px-8">
-        <div className="mx-auto max-w-[820px]">
-          <div className="mb-4 flex justify-center">
-            <div className="flex gap-0.5 rounded-[11px] border border-[#e5e5e5] bg-white p-1">
+            {connection === "failed" && runtimeToken && (
               <button
-                onClick={() => switchInputMode("voice")}
-                disabled={isBusy}
-                className={`mira-button rounded-lg px-4 py-2.5 text-[13.5px] disabled:cursor-not-allowed disabled:opacity-60 ${
-                  inputMode === "voice" ? "bg-orange-500 font-medium text-white" : "text-[#a3a3a3]"
-                }`}
+                type="button"
+                onClick={() => {
+                  setConnection("connecting");
+                  setErrorMessage(null);
+                  setConnectionRetry((value) => value + 1);
+                }}
+                className="mira-button rounded-[9px] border border-orange-200 bg-orange-50 px-3 py-2 text-[13px] text-orange-700"
               >
-                语音回答
+                重新连接
               </button>
-              <button
-                onClick={() => switchInputMode("text")}
-                disabled={isBusy}
-                className={`mira-button rounded-lg px-4 py-2.5 text-[13.5px] disabled:cursor-not-allowed disabled:opacity-60 ${
-                  inputMode === "text" ? "bg-orange-500 font-medium text-white" : "text-[#525252]"
-                }`}
-              >
-                打字回答
-              </button>
-            </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setReviewOpen(true)}
+              className="mira-button rounded-[9px] border border-[#e5e5e5] bg-white px-3 py-2 text-[13px]"
+            >
+              ↗ 回看
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmEndOpen(true)}
+              className="mira-button rounded-[9px] border border-[#e5e5e5] bg-white px-3 py-2 text-[13px] text-[#525252] hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+            >
+              结束面试
+            </button>
           </div>
+        </div>
+      </header>
 
-          {inputMode === "voice" ? (
-            <div key="voice-input" className="animate-mira-rise flex flex-col items-center gap-4 py-1.5">
-              <div className="flex items-center gap-[18px]">
-                <button
-                  onClick={toggleRecording}
-                  disabled={isBusy}
-                  className={`flex h-[58px] w-[58px] items-center justify-center rounded-full bg-orange-500 transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
-                    isRecording
-                      ? "animate-mira-pulse border-[6px] border-orange-500/30 shadow-[0_8px_26px_rgba(249,115,22,0.45)]"
-                      : "border-[6px] border-orange-500/15 shadow-[0_8px_24px_rgba(249,115,22,0.3)]"
-                  }`}
-                >
-                  {isRecording ? (
-                    <span className="block h-[15px] w-[15px] rounded-[4px] bg-white" />
-                  ) : (
-                    <span
-                      className="ml-1 block h-0 w-0"
-                      style={{
-                        borderLeft: "11px solid #fff",
-                        borderTop: "8px solid transparent",
-                        borderBottom: "8px solid transparent",
-                      }}
-                    />
-                  )}
-                </button>
-                <button
-                  onClick={handleSubmitAnswer}
-                  disabled={!canSubmit}
-                  className={`mira-button rounded-xl px-6 py-3.5 text-[14.5px] font-medium ${
-                    canSubmit ? "cursor-pointer bg-[#0a0a0a] text-white" : "cursor-not-allowed bg-[#d4d4d4] text-white"
-                  }`}
-                >
-                  {isProcessing ? "处理中…" : "提交回答 · 继续 →"}
-                </button>
-              </div>
-              <div className="max-w-[720px] text-center text-[12.5px] text-[#a3a3a3]">{transcriptText}</div>
+      <div className="shrink-0 border-b border-[#f0f0f0] bg-white px-4 py-3">
+        <div className="mx-auto flex max-w-[920px] items-start gap-1.5">
+          {phaseOrder.map((item, index) => (
+            <div key={item} className="min-w-0 flex-1 text-center">
+              <span
+                className={`mb-1 block h-1.5 rounded-full transition-colors ${
+                  index <= activePhaseIndex ? "bg-orange-500" : "bg-[#e5e5e5]"
+                } ${index === activePhaseIndex ? "animate-mira-pulse" : ""}`}
+              />
+              <span
+                className={`hidden truncate text-[10px] md:block ${
+                  index === activePhaseIndex
+                    ? "font-medium text-orange-600"
+                    : "text-[#a3a3a3]"
+                }`}
+              >
+                {phaseLabels[item]}
+              </span>
             </div>
-          ) : (
-            <div key="text-input" className="animate-mira-rise">
-              <div className="flex items-end gap-3 rounded-[14px] border border-[#e5e5e5] bg-white p-3.5 shadow-[0_2px_8px_rgba(0,0,0,0.03)]">
-                <textarea
-                  value={answerText}
-                  onChange={(e) => setAnswerText(e.target.value)}
-                  disabled={isBusy}
-                  placeholder="输入你的回答，Shift + Enter 换行…"
-                  className="max-h-[140px] min-h-[26px] flex-1 resize-none border-none bg-transparent text-[14.5px] leading-relaxed text-[#0a0a0a] outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                />
-                <button
-                  onClick={handleSubmitAnswer}
-                  disabled={!canSubmit}
-                  className={`mira-button shrink-0 rounded-[10px] px-[18px] py-2.5 text-sm font-medium whitespace-nowrap text-white ${
-                    canSubmit ? "bg-orange-500" : "cursor-not-allowed bg-[#d4d4d4]"
-                  }`}
-                >
-                  {isProcessing ? "处理中…" : "提交回答 · 继续"}
-                </button>
-              </div>
-              <div className="mt-2.5 text-center text-xs text-[#a3a3a3]">
-                提交后答案会先进入处理状态，Mira 随后生成下一道追问
-              </div>
-            </div>
-          )}
+          ))}
+        </div>
+        <div className="mt-1 text-center text-xs font-medium text-orange-600 md:hidden">
+          {phaseLabels[phase] ?? phase}
         </div>
       </div>
+
+      <main className="relative min-h-0 flex-1">
+        <div
+          ref={chatRef}
+          onScroll={handleChatScroll}
+          className="h-full overflow-y-auto px-4 py-6 md:px-8"
+          aria-live="polite"
+        >
+          <div className="mx-auto flex max-w-[820px] flex-col gap-5">
+            {isLoading && (
+              <div className="flex flex-col items-center gap-3 py-16 text-sm text-[#737373]">
+                <StageIcon thinking />
+                正在恢复本场面试…
+              </div>
+            )}
+            {!isLoading && messages.length === 0 && !errorMessage && (
+              <div className="flex flex-col items-center gap-3 py-16 text-sm text-[#737373]">
+                <StageIcon thinking />
+                面试官正在准备开场问题
+              </div>
+            )}
+            {messages.map((message) => (
+              <div
+                key={message.key}
+                className={`flex ${
+                  message.role === "candidate"
+                    ? "justify-end"
+                    : "justify-start"
+                }`}
+              >
+                <div
+                  className={`max-w-[85%] rounded-2xl px-4 py-3 text-[14.5px] leading-7 shadow-sm md:max-w-[72%] ${
+                    message.role === "candidate"
+                      ? "rounded-br-md bg-orange-500 text-white"
+                      : "rounded-bl-md border border-[#eee] bg-white text-[#262626]"
+                  } ${message.pending ? "opacity-70" : ""}`}
+                >
+                  <div className="mb-1 text-[11px] opacity-65">
+                    {message.role === "candidate" ? "你" : "Mira 面试官"} ·{" "}
+                    {phaseLabels[normalizePhase(message.phase)] ??
+                      normalizePhase(message.phase)}
+                  </div>
+                  <p className="m-0 whitespace-pre-wrap">{message.content}</p>
+                  {message.streaming && (
+                    <span className="ml-1 inline-block h-4 w-0.5 animate-mira-pulse bg-orange-500 align-middle" />
+                  )}
+                </div>
+              </div>
+            ))}
+            {isThinking && (
+              <div className="flex justify-start">
+                <div className="inline-flex items-center gap-2 rounded-2xl rounded-bl-md border border-[#eee] bg-white px-4 py-3 text-sm text-[#737373] shadow-sm">
+                  <span className="flex gap-1">
+                    {[0, 1, 2].map((item) => (
+                      <span
+                        key={item}
+                        className="animate-mira-pulse block h-1.5 w-1.5 rounded-full bg-orange-400"
+                      />
+                    ))}
+                  </span>
+                  Mira 正在思考
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        {showLatest && (
+          <button
+            type="button"
+            onClick={scrollToLatest}
+            className="mira-button absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-orange-200 bg-white px-4 py-2 text-xs text-orange-600 shadow-lg"
+          >
+            ↓ 回到最新
+          </button>
+        )}
+      </main>
+
+      <footer className="shrink-0 border-t border-[#eee] bg-white px-4 pt-3 pb-[max(14px,env(safe-area-inset-bottom))] md:px-8">
+        <div className="mx-auto max-w-[820px]">
+          {errorMessage && (
+            <div
+              role="alert"
+              className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-center text-xs text-red-600"
+            >
+              {errorMessage}
+            </div>
+          )}
+          <div className="mb-2 flex justify-center gap-1 rounded-lg text-xs">
+            <button
+              type="button"
+              disabled
+              title="语音模式将在 T-114 接入"
+              className="cursor-not-allowed rounded-lg border border-[#eee] px-3 py-1.5 text-[#b5b5b5]"
+            >
+              语音回答（即将支持）
+            </button>
+            <span className="rounded-lg bg-orange-500 px-3 py-1.5 font-medium text-white">
+              打字回答
+            </span>
+          </div>
+          <div className="flex items-end gap-2 rounded-[14px] border border-[#e5e5e5] bg-white p-2.5 shadow-[0_3px_16px_rgba(0,0,0,.05)] focus-within:border-orange-300">
+            <textarea
+              value={answerText}
+              onChange={(event) => setAnswerText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  void handleSubmitAnswer();
+                }
+              }}
+              disabled={isLoading || isSubmitting || isThinking || isEnded}
+              placeholder="输入你的回答，Shift + Enter 换行"
+              rows={2}
+              className="max-h-28 min-h-12 flex-1 resize-none border-none bg-transparent px-1 text-[14.5px] leading-6 outline-none disabled:cursor-not-allowed disabled:opacity-60"
+            />
+            <button
+              type="button"
+              onClick={() => void handleSubmitAnswer()}
+              disabled={
+                isLoading ||
+                isSubmitting ||
+                isThinking ||
+                !answerText.trim() ||
+                !runtimeToken
+              }
+              className="mira-button shrink-0 rounded-[10px] bg-orange-500 px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-[#d4d4d4]"
+            >
+              {isSubmitting ? "发送中…" : "提交回答"}
+            </button>
+          </div>
+        </div>
+      </footer>
 
       {reviewOpen && (
         <>
-          <div
+          <button
+            type="button"
+            aria-label="关闭回看"
             onClick={() => setReviewOpen(false)}
             className="fixed inset-0 z-[1500] bg-[#0a0a0a]/35 backdrop-blur-[2px]"
           />
-          <div className="animate-mira-slide-left fixed top-0 right-0 bottom-0 z-[1600] flex w-full max-w-[440px] flex-col bg-white shadow-[-20px_0_60px_-20px_rgba(0,0,0,0.25)]">
-            <div className="flex items-center justify-between border-b border-[#f2f2f2] px-[26px] py-[22px]">
+          <aside className="animate-mira-slide-left fixed top-0 right-0 bottom-0 z-[1600] flex w-full max-w-[440px] flex-col bg-white shadow-[-20px_0_60px_-20px_rgba(0,0,0,.25)]">
+            <div className="flex items-center justify-between border-b border-[#f2f2f2] px-6 py-5">
               <div>
-                <div className="text-[17px] font-semibold">回看本场问答</div>
-                <div className="mt-0.5 text-[12.5px] text-[#a3a3a3]">面试仍在进行中</div>
+                <h2 className="m-0 text-[17px] font-semibold">回看本场问答</h2>
+                <p className="m-0 mt-1 text-xs text-[#a3a3a3]">
+                  来自服务端恢复与本轮实时消息
+                </p>
               </div>
               <button
+                type="button"
+                aria-label="关闭"
                 onClick={() => setReviewOpen(false)}
-                className="mira-button flex h-[34px] w-[34px] items-center justify-center rounded-[9px] border border-[#eee] bg-white text-base text-[#525252]"
+                className="mira-button h-9 w-9 rounded-lg border border-[#eee]"
               >
                 ×
               </button>
             </div>
-            <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-[26px] py-[22px]">
-              {answered.length === 0 ? (
-                <div className="py-[60px] text-center text-[13.5px] text-[#a3a3a3]">
-                  还没有已回答的问题
-                  <br />
-                  回答后即可在此回看
-                </div>
+            <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-6 py-5">
+              {messages.length === 0 ? (
+                <p className="py-12 text-center text-sm text-[#a3a3a3]">
+                  暂无可回看的消息
+                </p>
               ) : (
-                answered.map((item) => (
-                  <div key={item.n} className="mira-surface overflow-hidden rounded-2xl border border-[#f0f0f0]">
-                    <div className="flex gap-2.5 border-b border-[#f2f2f2] bg-[#fafafa] px-4 py-3.5">
-                      <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] bg-[#0a0a0a] font-display text-xs text-white">
-                        {item.n}
-                      </span>
-                      <div className="text-[13.5px] leading-[1.5] font-medium">{item.q}</div>
+                messages.map((message) => (
+                  <div
+                    key={`review-${message.key}`}
+                    className={`rounded-xl border p-3 ${
+                      message.role === "candidate"
+                        ? "border-orange-100 bg-orange-50"
+                        : "border-[#eee] bg-[#fafafa]"
+                    }`}
+                  >
+                    <div className="mb-1 text-[11px] text-[#a3a3a3]">
+                      {message.role === "candidate" ? "你的回答" : "面试官"}
                     </div>
-                    <div className="px-4 py-3.5">
-                      <div className="mb-1.5 text-[11.5px] text-[#a3a3a3]">你的回答</div>
-                      <p className="m-0 text-[13.5px] leading-relaxed text-[#404040]">{item.a}</p>
-                    </div>
+                    <p className="m-0 whitespace-pre-wrap text-[13.5px] leading-6 text-[#404040]">
+                      {message.content}
+                    </p>
                   </div>
                 ))
               )}
             </div>
-          </div>
+          </aside>
         </>
       )}
 
       {confirmEndOpen && (
         <>
-          <div
+          <button
+            type="button"
+            aria-label="取消结束"
             onClick={() => setConfirmEndOpen(false)}
             className="fixed inset-0 z-[1700] bg-[#0a0a0a]/35 backdrop-blur-[2px]"
           />
-          <div className="animate-mira-soft-pop fixed top-1/2 left-1/2 z-[1800] w-[calc(100%-32px)] max-w-[380px] -translate-x-1/2 -translate-y-1/2 rounded-[18px] border border-[#fee2e2] bg-white p-6 shadow-[0_26px_70px_-24px_rgba(127,29,29,.45)]">
-            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-red-50 text-[18px] font-semibold text-red-600">
-              !
-            </div>
-            <h2 className="m-0 mb-2 text-[19px] font-semibold tracking-[-0.01em]">
-              确认结束面试？
-            </h2>
-            <p className="m-0 mb-6 text-[14px] leading-relaxed text-[#737373]">
-              结束后将直接生成本场面试结果，当前题目的未提交内容不会继续记录。
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="animate-mira-soft-pop fixed top-1/2 left-1/2 z-[1800] w-[calc(100%-32px)] max-w-[390px] -translate-x-1/2 -translate-y-1/2 rounded-[18px] border border-red-100 bg-white p-6 shadow-2xl"
+          >
+            <h2 className="m-0 mb-2 text-xl font-semibold">确认结束面试？</h2>
+            <p className="m-0 mb-6 text-sm leading-6 text-[#737373]">
+              尚未发送的输入不会被保存；结束后将进入结果页。
             </p>
             <div className="flex gap-2.5">
               <button
+                type="button"
                 onClick={() => setConfirmEndOpen(false)}
-                className="mira-button flex-1 rounded-[10px] border border-[#e5e5e5] bg-white py-2.5 text-[14px] text-[#525252]"
+                className="mira-button flex-1 rounded-[10px] border border-[#e5e5e5] py-2.5 text-sm"
               >
                 继续面试
               </button>
               <button
-                onClick={goResult}
-                className="mira-button flex-1 rounded-[10px] bg-red-600 py-2.5 text-[14px] font-medium text-white shadow-[0_8px_22px_rgba(220,38,38,.24)] hover:bg-red-700"
+                type="button"
+                onClick={() => void handleManualEnd()}
+                className="mira-button flex-1 rounded-[10px] bg-red-600 py-2.5 text-sm font-medium text-white"
               >
-                结束并生成结果
+                确认结束
               </button>
             </div>
           </div>

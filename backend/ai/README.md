@@ -1,6 +1,6 @@
 # MiraPrep AI 服务
 
-FastAPI 服务负责 AI 推理与临时会话状态，不保存业务数据；当前已包含简历解析、面试大纲生成和文字面试运行时。T-101 后，模型调用统一经 LangChain，面试决策由 LangGraph `StateGraph` 编排；批改算法由后续 T-105 接入。
+FastAPI 服务负责 AI 推理与临时会话状态，不保存业务数据；当前已包含简历解析、面试大纲生成、文字面试运行时和面试批改。T-101 后，模型调用统一经 LangChain，面试决策由 LangGraph `StateGraph` 编排。ASR/TTS 仍未接入，`.env.example` 中的 provider 值只是占位。
 
 ## 本地运行
 
@@ -21,7 +21,22 @@ uv run uvicorn app.main:app --port 8000
 
 前端使用 fetch 流订阅 `GET /interviews/{sessionId}/stream`，并在 stream、answer、end 三个运行时接口统一携带 `Authorization: Bearer <accessToken>`；不能把内部服务令牌交给浏览器。回答调用 `POST /interviews/{sessionId}/answer`，body 为 `{answerId, content, questionId?}`：`answerId` 是本轮唯一 ID，网络重试必须复用同一个值。手动结束调用 `POST /interviews/{sessionId}/end`。
 
-SSE 事件固定为 `{type, payload, seq}`。浏览器重连时发送 `Last-Event-ID`，或首次连接使用 `?afterSeq=123`，服务会从下一个 `seq` 开始回放；若请求的旧事件已被裁剪，会在建流前返回 409，客户端应从 Spring 持久化消息重新同步。会话状态、进行中的流式消息、完整对话历史、Spring 回调 outbox 和可回放事件保存在 Redis，默认保留 4 小时。后台维护循环不依赖 SSE 连接，会推进超时会话，并以有界退避重试消息回调和批改请求；批改请求携带稳定的幂等 ID，具体算法由 T-105 接入。
+SSE 事件固定为 `{type, payload, seq}`。浏览器重连时发送 `Last-Event-ID`，或首次连接使用 `?afterSeq=123`，服务会从下一个 `seq` 开始回放；若请求的旧事件已被裁剪，会在建流前返回 409，客户端应从 Spring 持久化消息重新同步。会话状态、进行中的流式消息、完整对话历史、Spring 回调 outbox 和可回放事件保存在 Redis，默认保留 4 小时。后台维护循环不依赖 SSE 连接，会推进超时会话，并以有界退避重试消息回调。结束时运行时携带稳定 `requestId` 通知 Spring 的 `/grading-request`，由业务事实来源组装批改请求。
+
+## 面试批改（T-105）
+
+FastAPI 运行时结束后先调用 Spring Boot
+`POST /api/v1/internal/interviews/{sessionId}/grading-request`。Spring 从持久化的简历、
+大纲和消息组装完整 transcript，再调用
+`POST /internal/interviews/{sessionId}/grade`，并立即得到
+`202 {"accepted": true}`。请求以 `sessionId` 幂等写入 Redis 队列，后台使用
+`ANTHROPIC_GRADING_MODEL` 批量生成逐题结构化评语；五维分、总分和 S/A/B/C/D
+评级由确定性 Python 规则计算。成功结果回调
+`/api/v1/internal/interviews/{sessionId}/grade-result`；模型连续三次失败则回调
+`grade-failed`。Spring 侧由 T-106 负责幂等落库、报告查询与统计聚合。回调阶段单独持久化，投递失败不会重复调用模型。
+默认启动 2 个批改 worker；回调连续投递 5 轮仍失败时移入 Redis 死信队列，
+避免坏任务无限占用 worker。可通过 `GRADING_WORKER_COUNT` 和
+`GRADING_MAX_DELIVERY_ATTEMPTS` 调整。
 
 ## LangChain / LangGraph（T-101）
 

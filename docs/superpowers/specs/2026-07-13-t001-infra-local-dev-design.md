@@ -1,5 +1,7 @@
 # T-001 本地基础设施设计
 
+> **历史快照**：本文记录 T-001 实施时的设计，Redis 7 已由后续 T-101 升级为 Redis 8，后端目录也早已完成初始化。当前状态见 [任务总表](../../tasks/README.md) 与 [历史文档说明](../README.md)。
+
 ## 目标
 
 为 MiraPrep 的后续 Spring Boot 与 FastAPI 服务提供可重复启动的本地依赖：MySQL、Redis 与 MinIO。开发者进入 `infra/` 后执行 `docker compose up -d`，即可获得一致的数据库、缓存和对象存储环境。

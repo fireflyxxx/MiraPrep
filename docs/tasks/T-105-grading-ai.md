@@ -4,6 +4,13 @@
 |---|---|---|---|---|
 | Backend-AI | M1 | 2d | T-040, T-101 | T-106 |
 
+## 实施状态（2026-07-24）
+
+**REVIEW**。FastAPI 批改 schema、Prompt、评分服务、异步任务、成功/失败回调均已实现；
+面试结束后的运行时通知、Spring 请求组装和 FastAPI 批改队列已经接通。FastAPI 全量
+pytest 当前为 **162 passed**，Spring 全量 `clean check` 为 **75 tests、0 failures**。
+尚未提交发布；真实 LLM + MySQL/Redis 的跨进程 HTTP 验收仍需在完整环境完成。
+
 ## 背景
 面试结束后统一批改：给每题打分、生成参考答案与建议、聚合五维能力分与总分评级，回调 Spring 落库。先读 PRD §5.3（评分与评级体系）。
 
@@ -16,10 +23,15 @@
 
 ## 技术规格
 - `POST /internal/interviews/{id}/grade`（内部 token）body `{sessionId, config, resume:{parsedJson}, transcript:[{questionId,phase,focusPoints,question,answer,followUps:[...]}], partial:bool}` → `202 {accepted:true}`，后台批改。
+- 请求事实由 Spring 组装：FastAPI 运行时结束时先调用 Spring
+  `POST /api/v1/internal/interviews/{id}/grading-request`，Spring 从已持久化的简历、
+  大纲和消息构造上述完整 payload，再通过 `AiServiceClient` 调用本接口。主回答取该题
+  第一条候选人消息，后续问答按顺序整理到 `followUps`；`grading_status` 为
+  `PENDING/READY` 时重复结束不会重复派发。
 - 输出（回调 Spring）schema：
   ```json
   {
-    "grade":"A-|A|B+...",         // 或 S/A/B/C/D，与 PRD 一致：本项目沿用 S/A/B/C/D（含 +/- 细分可选）
+    "grade":"A",                  // 冻结枚举：S/A/B/C/D
     "totalScore": 82,
     "dimensionScores": {
       "professionalKnowledge":78,
@@ -47,9 +59,12 @@
 
 ## 涉及文件
 - `app/routers/internal.py`（grade 路由）
+- `app/services/interview_agent.py`（结束后通知 Spring 组装批改请求）
 - `app/services/grading.py`（评分/聚合/参考答案/建议）
 - `app/schemas/grading.py`
 - `app/prompts/grading.py`
+- `backend/business/.../interview/InterviewService.java`（持久化事实组装）
+- `backend/business/.../client/AiServiceClient.java`（跨服务请求契约）
 
 ## 验收标准
 1. 给定一场完整问答，产出结构完整的报告内容（各字段齐全、评级与总分自洽）。
@@ -58,9 +73,11 @@
 4. 未完成面试走 partial 分支并标注。
 5. 成功与“批改重试耗尽”两种回调均有 mock 验证；回调投递失败会重试。
 6. 内部 token + 防注入生效。
+7. 运行时结束 → Spring 组装完整请求 → FastAPI `/grade` 的调用契约有自动化测试，
+   且重复结束保持幂等。
 
 ## 验证方式
 PR 贴：一场问答的批改输出（脱敏）、评级/五维计算说明、partial 分支、回调 payload。
 
 ## 遗留/发现
-- 评级粒度（S/A/B/C/D vs 含 +/-）需与前端 T-108、PRD §4.2 评级色对齐后定稿。
+- 评级契约已冻结为 `S/A/B/C/D`，不含 `+/-`；T-108 联调时需替换旧视觉 mock 中的 `A-`、`B+` 示例。

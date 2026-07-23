@@ -4,6 +4,8 @@ import com.miraprep.domain.InterviewSession;
 import com.miraprep.domain.InterviewStatus;
 import jakarta.persistence.LockModeType;
 import java.util.Optional;
+import java.util.Collection;
+import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -18,6 +20,9 @@ public interface InterviewSessionRepository extends JpaRepository<InterviewSessi
 
     Page<InterviewSession> findByUserIdAndDeletedFalseAndStatus(
             Long userId, InterviewStatus status, Pageable pageable);
+
+    List<InterviewSession> findByUserIdAndDeletedFalseAndStatusIn(
+            Long userId, Collection<InterviewStatus> statuses);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select session from InterviewSession session where session.id = :id")

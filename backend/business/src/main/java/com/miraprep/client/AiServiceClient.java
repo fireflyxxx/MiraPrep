@@ -89,5 +89,18 @@ public class AiServiceClient {
 
     public record InterviewOutlineResume(Map<String, Object> parsedJson) {}
 
-    public record InterviewGradeRequest(Long sessionId) {}
+    public record InterviewGradeRequest(
+            Long sessionId,
+            InterviewOutlineConfig config,
+            InterviewOutlineResume resume,
+            List<InterviewGradeTranscriptQuestion> transcript,
+            boolean partial) {}
+
+    public record InterviewGradeTranscriptQuestion(
+            Long questionId,
+            String phase,
+            List<String> focusPoints,
+            String question,
+            String answer,
+            List<Map<String, Object>> followUps) {}
 }

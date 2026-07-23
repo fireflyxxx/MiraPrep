@@ -3,8 +3,8 @@
 > 本文档是 MiraPrep 项目的工程总纲。任何 agent 在开工前**必须先读本文档**，再读 `docs/tasks/` 下自己被指派的那一份任务文件。
 > 产品需求见 [`MiraPrep-PRD.md`](./MiraPrep-PRD.md)（本文档不重复 PRD 的产品细节，只补充工程实现口径）。
 
-- 文档版本：v1.1
-- 更新日期：2026-07-10
+- 文档版本：v1.2
+- 更新日期：2026-07-24
 - 适用范围：全栈（Next.js 前端 + Spring Boot 业务服务 + FastAPI AI 服务）
 
 ---
@@ -17,18 +17,23 @@
 |---|---|---|
 | 前端脚手架 | `frontend/` | ✅ Next.js 16.2.10 (App Router) + React 19 + Tailwind v4，已初始化 |
 | 前端页面 | `frontend/src/app/**` | ✅ 10 个页面全部按设计稿实现：落地页 `/`、登录 `/auth`、引导 `/onboarding`、工作台 `/dashboard`、我的面试 `/interviews`、题库训练占位 `/practice`、面试配置 `/interview/setup`、面试进行 `/interview/[sessionId]`、评级 `/interview/[sessionId]/result`、报告 `/report/[sessionId]` |
-| 前端数据 | `frontend/src/lib/mock-data.ts` | ⚠️ 全部是写死的 mock 数据，**无任何后端交互**。所有跳转靠 `router.push`，无鉴权 |
+| 前端数据 | `frontend/src/lib/api/**` | 🚧 认证、用户资料、简历、配置向导和文字面试已接真实服务；工作台统计、我的面试、评级与报告仍使用 mock，待 T-107~T-109 |
 | 页面过渡 | `frontend/src/components/RouteTransition.tsx` + `globals.css` | ✅ View Transitions 已按页面对定制 |
-| 工作台外壳 | `frontend/src/components/dashboard/DashboardShell.tsx` | ✅ `/dashboard`、`/interviews`、`/practice` 共用侧边栏与用户菜单；身份、退出、额度仍为 mock/占位 |
+| 主题与工作台外壳 | `ThemeProvider`、`ThemeToggle`、`DashboardShell` | ✅ 明暗主题、共享侧边栏、真实用户身份与退出已接入；额度仍为占位 |
 | Logo | `frontend/src/components/Logo.tsx` | ✅ 含多变体镜面 SVG 图标 |
-| Spring Boot 业务服务 | `backend/`（需自行确定子目录，如 `backend/business`） | ❌ 空目录，未初始化 |
-| FastAPI AI 服务 | `backend/`（如 `backend/ai`） | ❌ 空目录，未初始化 |
-| 本地基础设施 | — | ❌ 无 docker-compose，无 MySQL/Redis/对象存储 |
-| CI / 测试 | — | ❌ 无 |
+| Spring Boot 业务服务 | `backend/business/` | ✅ 认证、用户、简历、会话、消息、报告、统计及内部回调已实现（至 T-106） |
+| FastAPI AI 服务 | `backend/ai/` | ✅ 简历解析、大纲、LangGraph 文字面试运行时与批改队列已实现（至 T-105） |
+| 本地基础设施 | `infra/` | ✅ Docker Compose：MySQL 8、Redis 8、MinIO 与 bucket 初始化 |
+| 本地开发脚本 | `scripts/` | ✅ Windows 一键启动、停止、配置校验与脚本测试 |
+| CI / 测试 | `.github/workflows/ci.yml` | ✅ 前端、Spring、FastAPI 三服务 lint/test/build/coverage |
 
-**当前分支**：`frontend`（主分支为 `main`）。
+**长期分支**：`main`、`frontend`、`backend`。当前工作分支以 `git status --short --branch` 为准，本文档不固定某一分支为“当前”。
 
-**关键结论**：前端「壳」已好，接下来的工作核心是①搭两个后端服务 ②把前端从 mock 切到真实 API ③打通面试实时链路与语音。
+**关键结论**：M1 已打通认证、简历、配置、大纲、消息持久化和文字面试实时链路。
+面试结束后的“FastAPI 运行时通知 → Spring 组装持久化事实 → FastAPI 批改队列 →
+Spring 报告回调”也已完成代码接通和两端自动化测试；真实 LLM + MySQL/Redis 的跨进程
+HTTP 验收仍是发布前证据。当前首要剩余工作是 T-107~T-109，把工作台、我的面试、评级
+与报告页从 mock 切到真实 API；语音仍属于 M2。
 
 ---
 
@@ -57,6 +62,9 @@
 - 前端业务数据一律走 Spring Boot；只有「面试实时对话流」和「语音流」直连 FastAPI 的 SSE/WebSocket。
 - FastAPI 不被前端直接调用做 CRUD。Spring Boot → FastAPI 用内部 REST（`/internal/*`），带内部鉴权头。
 - FastAPI 完成异步任务（解析、批改）后**回调** Spring Boot 落库，不自己写业务库。
+- 面试结束时由 FastAPI 运行时通知 Spring；Spring 作为事实来源从已持久化的简历、
+  大纲和消息组装完整批改请求，再调用 FastAPI 批改入口。不要让运行时临时态代替业务
+  持久化事实。
 
 ---
 
@@ -67,14 +75,15 @@
 - React `19.2.4`
 - Tailwind CSS `v4`（配置在 `globals.css` 的 `@theme`，**不是** `tailwind.config.js`）
 - TypeScript `5.x`，路径别名 `@/* -> src/*`
-- 待引入（按任务）：`@tanstack/react-query`（数据请求）、`shadcn/ui` + `lucide-react`（组件/图标）、`recharts`（雷达图/折线）、`next-themes`（深色模式）、`framer-motion`（M2 动效）、`zod`（校验）
+- 已引入：`@tanstack/react-query`、shadcn 基础组件、`lucide-react`、`next-themes`、`zod`
+- 待后续任务引入：`recharts`（T-108 图表）、`framer-motion`（T-115/T-116 动效）
 
 > ⚠️ 该版本 Next.js 与训练数据可能不同。写代码前先看 `frontend/node_modules/next/dist/docs/` 里对应的 guide（尤其动态路由 `params` 是 `Promise`、需 `await`）。
 
 ### Spring Boot 业务服务
-- Java 21 (LTS)、Spring Boot 3.3+、Gradle（Kotlin DSL）或 Maven（团队统一，见 T-002 决策）
+- Java 21 (LTS)、Spring Boot `3.3.13`、Gradle Kotlin DSL
 - Spring Web、Spring Security（JWT）、Spring Data JPA、Flyway（迁移）、Validation
-- MySQL 8、Redis 7、对象存储用 MinIO（本地）/ 生产 S3 兼容
+- MySQL 8、Redis 8（LangGraph checkpoint 需要 RedisJSON/RediSearch）、对象存储用 MinIO（本地）/ 生产 S3 兼容
 - API 文档：springdoc-openapi（Swagger UI）
 
 ### FastAPI AI 服务
@@ -92,7 +101,7 @@
 
 ---
 
-## 4. 目标仓库结构
+## 4. 当前仓库结构
 
 ```
 MiraPrep/
@@ -100,31 +109,41 @@ MiraPrep/
 │   ├── MiraPrep-PRD.md
 │   ├── DEVELOPMENT.md          # 本文件
 │   └── tasks/                  # 任务拆分（每个任务一个文件）
-├── frontend/                   # Next.js（已存在）
+├── frontend/                   # Next.js
 │   └── src/
 │       ├── app/                # 路由页面（已存在）
 │       ├── components/         # 组件（已存在）
 │       └── lib/
-│           ├── mock-data.ts    # ⚠️ 逐步废弃
-│           ├── api/            # ← 新增：API client、类型、hooks
+│           ├── mock-data.ts    # ⚠️ 仅供 T-107~T-109 待联调页面，逐步废弃
+│           ├── api/            # API client、类型、hooks
 │           └── ...
 ├── backend/
-│   ├── business/               # ← Spring Boot（新建）
+│   ├── business/               # Spring Boot
 │   │   └── src/main/java/com/miraprep/...
-│   └── ai/                     # ← FastAPI（新建）
+│   └── ai/                     # FastAPI
 │       └── app/...
-├── infra/                      # ← docker-compose、初始化脚本（新建）
+├── infra/                      # docker-compose、初始化脚本
 │   └── docker-compose.yml
+├── scripts/                    # Windows 本地开发脚本
+├── .github/workflows/          # 三服务 CI
 └── README.md
 ```
 
-> `backend/` 下用 `business/` 与 `ai/` 两个子目录分别放两个服务，避免混在根级。若你被指派 T-002/T-003，请在这两个子目录里初始化。
+> `backend/` 下用 `business/` 与 `ai/` 两个子目录分别放两个服务，避免混在根级。后续任务必须继续遵守该边界。
 
 ---
 
 ## 5. 本地开发环境
 
-依赖 T-001 完成后，标准启动顺序：
+Windows 推荐从仓库根目录运行：
+
+```powershell
+.\scripts\dev-up.ps1
+```
+
+脚本会启动基础设施、AI、Spring 和前端，统一注入内部令牌，并验证受保护的内部接口。`-ValidateOnly` 只检查配置和依赖；停止使用 `.\scripts\dev-down.ps1`。
+
+手动启动顺序：
 
 ```bash
 # 1. 基础设施
@@ -146,7 +165,7 @@ cd frontend && npm run dev
 
 ## 6. 环境变量约定
 
-各服务用 `.env`（**不提交**，提交 `.env.example`）。关键变量：
+前端使用 `.env.local`，FastAPI 会读取本地 `.env`；Spring Boot 默认只读取进程环境变量或 `application.yml`，根目录 `dev-up.ps1` 会从配置文件注入所需变量。真实密钥均不提交，只维护 `.env.example`。关键变量：
 
 **frontend/.env.local**
 ```
@@ -154,7 +173,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8080/api/v1     # Spring Boot
 NEXT_PUBLIC_AI_STREAM_URL=http://localhost:8000           # FastAPI SSE/WS
 ```
 
-**backend/business/.env**（或 application.yml）
+**backend/business 进程环境变量**（或 `application.yml`）
 ```
 DB_URL=jdbc:mysql://localhost:3306/miraprep
 DB_USER=... DB_PASSWORD=...
@@ -169,8 +188,11 @@ AI_INTERNAL_TOKEN=...        # 内部调用鉴权
 ```
 ANTHROPIC_API_KEY=...
 ANTHROPIC_MODEL=claude-sonnet-5
+ANTHROPIC_GRADING_MODEL=claude-opus-4-8
 ANTHROPIC_BASE_URL=...       # 可选：Anthropic 兼容服务地址；留空使用默认 Anthropic 地址
 ANTHROPIC_MAX_TOKENS=4096    # 单次模型输出上限
+GRADING_WORKER_COUNT=2
+GRADING_MAX_DELIVERY_ATTEMPTS=5
 BUSINESS_CALLBACK_URL=http://localhost:8080/api/v1/internal
 INTERNAL_TOKEN=...           # 与 Spring 侧 AI_INTERNAL_TOKEN 一致
 REDIS_HOST=localhost
@@ -240,12 +262,12 @@ JSON envelope，字段固定：
 
 ## 10. 里程碑与任务映射
 
-| 里程碑 | 目标 | 覆盖任务 |
-|---|---|---|
-| **M1 基础闭环** | 认证、Onboarding、工作台首页、我的面试、简历上传解析、配置向导、**纯文字面试**、评级+基础报告 | T-001~006（基建）、T-010~012（认证）、T-020~022（简历）、T-030~032（配置/会话）、T-040 + T-101/T-103/T-104（文字面试）、T-105/T-106/T-108（批改/报告）、T-107/T-109（工作台区） |
-| **M2 语音与体验** | 语音 ASR/TTS、面试官动画、深色模式、评级揭晓动效、雷达图 | T-112~T-116 |
-| **M3 增长与打磨** | 落地页完整版、报告导出/分享、历史对比、重练此题、第三方登录、题库 RAG | T-117~T-122 |
-| **横切与上线** | 测试/CI、安全加固、部署发布、可观测 | T-102、T-110、T-111、T-123 |
+| 里程碑 | 目标 | 覆盖任务 | 当前状态 |
+|---|---|---|---|
+| **M1 基础闭环** | 认证、Onboarding、工作台首页、我的面试、简历上传解析、配置向导、**纯文字面试**、评级+基础报告 | T-001~006、T-010~012、T-020~022、T-030~032、T-040、T-101、T-103~T-109 | 🚧 已实现至 T-106；待 T-107~T-109 前端联调 |
+| **M2 语音与体验** | 语音 ASR/TTS、面试官动画、评级揭晓动效、雷达图 | T-112~T-116 | TODO；明暗主题基础已由 T-006 完成 |
+| **M3 增长与打磨** | 落地页完整版、报告导出/分享、历史对比、重练此题、第三方登录、题库 RAG | T-117~T-122 | TODO |
+| **横切与上线** | 测试/CI、安全加固、部署发布、可观测 | T-102、T-110、T-111、T-123 | T-102 DONE；其余 TODO |
 
 完整任务列表、依赖关系与推荐执行顺序见 [`tasks/README.md`](./tasks/README.md)。
 

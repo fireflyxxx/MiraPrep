@@ -3,13 +3,15 @@ package com.miraprep.interview;
 import com.miraprep.client.AiServiceClient;
 import com.miraprep.common.error.ErrorCode;
 import com.miraprep.common.exception.BusinessException;
+import com.miraprep.domain.GradingStatus;
 import com.miraprep.domain.InterviewDifficulty;
+import com.miraprep.domain.InterviewMessage;
 import com.miraprep.domain.InterviewPhase;
 import com.miraprep.domain.InterviewSession;
 import com.miraprep.domain.InterviewStatus;
-import com.miraprep.domain.GradingStatus;
-import com.miraprep.domain.OutlineStatus;
 import com.miraprep.domain.InterviewerStyle;
+import com.miraprep.domain.MessageRole;
+import com.miraprep.domain.OutlineStatus;
 import com.miraprep.domain.Question;
 import com.miraprep.domain.Resume;
 import com.miraprep.interview.dto.CreateInterviewRequest;
@@ -21,21 +23,25 @@ import com.miraprep.interview.dto.InterviewListItemResponse;
 import com.miraprep.interview.dto.InterviewStatusResponse;
 import com.miraprep.interview.dto.OutlineResultRequest;
 import com.miraprep.interview.dto.OutlineQuestionRequest;
+import com.miraprep.interview.dto.RuntimeGradingRequest;
 import com.miraprep.resume.ResumeRepository;
-import java.util.Comparator;
+import com.miraprep.report.ReportRepository;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Locale;
+import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,17 +50,23 @@ public class InterviewService {
     private static final Logger LOGGER = LoggerFactory.getLogger(InterviewService.class);
     private final InterviewSessionRepository interviewSessionRepository;
     private final QuestionRepository questionRepository;
+    private final InterviewMessageRepository interviewMessageRepository;
     private final ResumeRepository resumeRepository;
+    private final ReportRepository reportRepository;
     private final ApplicationEventPublisher eventPublisher;
 
     public InterviewService(
             InterviewSessionRepository interviewSessionRepository,
             QuestionRepository questionRepository,
+            InterviewMessageRepository interviewMessageRepository,
             ResumeRepository resumeRepository,
+            ReportRepository reportRepository,
             ApplicationEventPublisher eventPublisher) {
         this.interviewSessionRepository = interviewSessionRepository;
         this.questionRepository = questionRepository;
+        this.interviewMessageRepository = interviewMessageRepository;
         this.resumeRepository = resumeRepository;
+        this.reportRepository = reportRepository;
         this.eventPublisher = eventPublisher;
     }
 
@@ -132,9 +144,33 @@ public class InterviewService {
 
         session.setStatus(targetStatus);
         session.setEndedAt(Instant.now());
-        session.setGradingStatus(GradingStatus.PENDING);
-        eventPublisher.publishEvent(new InterviewGradingRequestedEvent(session.getId()));
+        scheduleGrading(session);
         return endResponse(session);
+    }
+
+    @Transactional
+    public void requestGradingFromRuntime(Long sessionId, RuntimeGradingRequest request) {
+        InterviewSession session = interviewSessionRepository
+                .findByIdForUpdate(sessionId)
+                .filter(candidate -> !candidate.isDeleted())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+        if (session.getGradingStatus() == GradingStatus.PENDING
+                || session.getGradingStatus() == GradingStatus.READY) {
+            return;
+        }
+
+        InterviewStatus runtimeStatus = switch (request.reason().trim().toLowerCase(Locale.ROOT)) {
+            case "manual", "inappropriate_content" -> InterviewStatus.ABORTED;
+            case "timeout", "completed" -> InterviewStatus.COMPLETED;
+            default -> throw new BusinessException(ErrorCode.INVALID_PARAM);
+        };
+        if (session.getStatus() != InterviewStatus.ABORTED) {
+            session.setStatus(runtimeStatus);
+        }
+        if (session.getEndedAt() == null) {
+            session.setEndedAt(Instant.now());
+        }
+        scheduleGrading(session);
     }
 
     @Transactional(readOnly = true)
@@ -151,8 +187,16 @@ public class InterviewService {
 
         List<Long> sessionIds = sessions.getContent().stream().map(InterviewSession::getId).toList();
         Map<Long, Long> questionCounts = questionCounts(sessionIds);
+        Map<Long, String> grades = new HashMap<>();
+        if (!sessionIds.isEmpty()) {
+            reportRepository.findBySessionIdIn(sessionIds).forEach(
+                    report -> grades.put(report.getSession().getId(), report.getGrade().name()));
+        }
         List<InterviewListItemResponse> items = sessions.getContent().stream()
-                .map(session -> listItem(session, questionCounts.getOrDefault(session.getId(), 0L)))
+                .map(session -> listItem(
+                        session,
+                        questionCounts.getOrDefault(session.getId(), 0L),
+                        grades.get(session.getId())))
                 .toList();
         return new InterviewListResponse(items, sessions.getTotalElements(), page, size);
     }
@@ -223,7 +267,102 @@ public class InterviewService {
         return counts;
     }
 
-    private InterviewListItemResponse listItem(InterviewSession session, long questionCount) {
+    private void scheduleGrading(InterviewSession session) {
+        AiServiceClient.InterviewGradeRequest request = gradingRequest(session);
+        if (request.transcript().isEmpty()) {
+            session.setGradingStatus(GradingStatus.FAILED);
+            session.setGradingError("NO_ANSWERED_QUESTIONS");
+            return;
+        }
+        session.setGradingStatus(GradingStatus.PENDING);
+        session.setGradingError(null);
+        eventPublisher.publishEvent(new InterviewGradingRequestedEvent(request));
+    }
+
+    private AiServiceClient.InterviewGradeRequest gradingRequest(InterviewSession session) {
+        List<Question> questions =
+                questionRepository.findBySessionIdOrderBySortOrder(session.getId());
+        Map<Long, List<InterviewMessage>> messagesByQuestion = new HashMap<>();
+        for (InterviewMessage message :
+                interviewMessageRepository.findBySessionIdOrderBySeqAsc(session.getId())) {
+            if (message.getQuestion() != null) {
+                messagesByQuestion
+                        .computeIfAbsent(message.getQuestion().getId(), ignored -> new ArrayList<>())
+                        .add(message);
+            }
+        }
+
+        List<AiServiceClient.InterviewGradeTranscriptQuestion> transcript = new ArrayList<>();
+        for (Question question : questions) {
+            List<InterviewMessage> messages =
+                    messagesByQuestion.getOrDefault(question.getId(), List.of());
+            InterviewMessage primaryAnswer = messages.stream()
+                    .filter(message -> message.getRole() == MessageRole.CANDIDATE)
+                    .findFirst()
+                    .orElse(null);
+            if (primaryAnswer == null) {
+                continue;
+            }
+            transcript.add(new AiServiceClient.InterviewGradeTranscriptQuestion(
+                    question.getId(),
+                    lower(question.getPhase()),
+                    question.getFocusPoints() == null ? List.of() : question.getFocusPoints(),
+                    question.getText(),
+                    primaryAnswer.getContent(),
+                    followUps(messages, primaryAnswer.getSeq())));
+        }
+
+        Resume resume = session.getResume();
+        Map<String, Object> parsedResume =
+                resume == null || resume.getParsedJson() == null ? Map.of() : resume.getParsedJson();
+        return new AiServiceClient.InterviewGradeRequest(
+                session.getId(),
+                new AiServiceClient.InterviewOutlineConfig(
+                        session.getJobDirection(),
+                        session.getJobTitle(),
+                        session.getJdText(),
+                        lower(session.getDifficulty()),
+                        session.getTypes(),
+                        session.getDurationMin(),
+                        session.getCustomRequirements(),
+                        lower(session.getInterviewerStyle())),
+                new AiServiceClient.InterviewOutlineResume(parsedResume),
+                List.copyOf(transcript),
+                session.getStatus() == InterviewStatus.ABORTED);
+    }
+
+    private List<Map<String, Object>> followUps(
+            List<InterviewMessage> messages, int primaryAnswerSeq) {
+        List<Map<String, Object>> followUps = new ArrayList<>();
+        int lastAnswerSeq = primaryAnswerSeq;
+        for (InterviewMessage interviewer : messages) {
+            if (interviewer.getRole() != MessageRole.INTERVIEWER
+                    || interviewer.getSeq() <= primaryAnswerSeq) {
+                continue;
+            }
+            InterviewMessage answer = null;
+            for (InterviewMessage candidate : messages) {
+                if (candidate.getRole() == MessageRole.CANDIDATE
+                        && candidate.getSeq() > interviewer.getSeq()
+                        && candidate.getSeq() > lastAnswerSeq) {
+                    answer = candidate;
+                    break;
+                }
+            }
+            if (answer == null) {
+                continue;
+            }
+            Map<String, Object> pair = new LinkedHashMap<>();
+            pair.put("question", interviewer.getContent());
+            pair.put("answer", answer.getContent());
+            followUps.add(pair);
+            lastAnswerSeq = answer.getSeq();
+        }
+        return List.copyOf(followUps);
+    }
+
+    private InterviewListItemResponse listItem(
+            InterviewSession session, long questionCount, String grade) {
         Long actualDurationSeconds = session.getStartedAt() == null || session.getEndedAt() == null
                 ? null
                 : Duration.between(session.getStartedAt(), session.getEndedAt()).getSeconds();
@@ -235,7 +374,7 @@ public class InterviewService {
                 actualDurationSeconds,
                 questionCount,
                 lower(session.getStatus()),
-                null,
+                grade,
                 reportStatus(session),
                 session.getCreatedAt(),
                 session.getEndedAt());

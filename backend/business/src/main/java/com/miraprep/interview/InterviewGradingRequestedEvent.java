@@ -1,3 +1,5 @@
 package com.miraprep.interview;
 
-public record InterviewGradingRequestedEvent(Long sessionId) {}
+import com.miraprep.client.AiServiceClient;
+
+public record InterviewGradingRequestedEvent(AiServiceClient.InterviewGradeRequest request) {}

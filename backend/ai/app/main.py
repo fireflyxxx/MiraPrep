@@ -23,15 +23,24 @@ settings = get_settings()
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     maintenance_service = build_interview_event_stream_service()
     maintenance_task = asyncio.create_task(_run_interview_maintenance(maintenance_service))
+    grading_queue = internal.get_shared_grading_task_queue()
+    await grading_queue.recover_inflight()
+    grading_tasks = [
+        asyncio.create_task(_run_grading_maintenance(grading_queue))
+        for _ in range(settings.grading_worker_count)
+    ]
     try:
         yield
     finally:
-        maintenance_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await maintenance_task
+        for task in (maintenance_task, *grading_tasks):
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
         await maintenance_service.aclose()
+        await grading_queue.aclose()
         await get_redis().aclose()
         get_redis.cache_clear()
+        internal.get_shared_grading_task_queue.cache_clear()
 
 
 async def _run_interview_maintenance(service: object) -> None:
@@ -41,6 +50,16 @@ async def _run_interview_maintenance(service: object) -> None:
         except Exception:
             logger.exception("interview maintenance sweep failed")
         await asyncio.sleep(2)
+
+
+async def _run_grading_maintenance(queue: object) -> None:
+    while True:
+        try:
+            processed = await queue.run_once()  # type: ignore[attr-defined]
+        except Exception:
+            logger.exception("grading queue sweep failed")
+            processed = False
+        await asyncio.sleep(0.05 if processed else 1)
 
 
 app = FastAPI(title="MiraPrep AI Service", version="0.1.0", lifespan=lifespan)

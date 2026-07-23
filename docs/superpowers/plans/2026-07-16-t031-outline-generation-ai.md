@@ -1,5 +1,7 @@
 # T-031 Outline Generation AI Implementation Plan
 
+> **历史快照**：本文记录任务实施时的计划，未勾选项不代表当前未完成。当前状态见 [任务总表](../../tasks/README.md) 与 [历史文档说明](../README.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add an authenticated asynchronous FastAPI endpoint that creates a validated, duration-aware interview outline with Claude and callbacks the Spring Boot service.

@@ -20,6 +20,6 @@ public class InterviewAiRequestListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void requestGrading(InterviewGradingRequestedEvent event) {
-        aiServiceClient.requestInterviewGrade(new AiServiceClient.InterviewGradeRequest(event.sessionId()));
+        aiServiceClient.requestInterviewGrade(event.request());
     }
 }

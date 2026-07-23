@@ -93,8 +93,11 @@ class BusinessMessageSink:
         await self._callback.aclose()
 
 
-class DeferredGradingTrigger:
-    """T-105 接入点；当前记录完整负载，后续替换为真实批改任务实现。"""
+class BusinessGradingTrigger:
+    """通知业务服务从持久化事实组装 T-105 批改请求。"""
+
+    def __init__(self, callback: BusinessCallbackClient) -> None:
+        self._callback = callback
 
     async def trigger(
         self,
@@ -103,15 +106,12 @@ class DeferredGradingTrigger:
         reason: str,
         request_id: str,
     ) -> None:
-        logger.info(
-            "grading requested",
-            extra={
-                "session_id": session_id,
-                "message_count": len(transcript),
-                "reason": reason,
-                "request_id": request_id,
-            },
+        delivered = await self._callback.callback(
+            path=f"/interviews/{session_id}/grading-request",
+            json={"reason": reason, "requestId": request_id},
         )
+        if not delivered:
+            raise RuntimeError("business grading request callback exhausted retries")
 
 
 class QuestionMismatchError(ValueError):
@@ -829,7 +829,7 @@ def build_interview_agent_service() -> InterviewAgentService:
         store=RedisSessionStateStore(get_redis()),
         llm=LlmClient(settings),
         message_sink=BusinessMessageSink(callback),
-        grading_trigger=DeferredGradingTrigger(),
+        grading_trigger=BusinessGradingTrigger(callback),
         checkpointer=get_interview_checkpointer(),
     )
 
@@ -841,5 +841,5 @@ def build_interview_event_stream_service() -> InterviewAgentService:
         store=RedisSessionStateStore(get_redis()),
         llm=None,
         message_sink=BusinessMessageSink(callback),
-        grading_trigger=DeferredGradingTrigger(),
+        grading_trigger=BusinessGradingTrigger(callback),
     )

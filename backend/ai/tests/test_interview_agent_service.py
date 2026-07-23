@@ -94,6 +94,39 @@ class RecordingMessageSink:
         self.closed = True
 
 
+class RecordingBusinessCallback:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def callback(self, path: str, json: dict[str, Any]) -> bool:
+        self.calls.append((path, json))
+        return True
+
+    async def aclose(self) -> None:
+        return None
+
+
+@pytest.mark.asyncio
+async def test_business_grading_trigger_requests_spring_to_assemble_the_grade_payload() -> None:
+    module = import_module("app.services.interview_agent")
+    callback = RecordingBusinessCallback()
+    trigger = module.BusinessGradingTrigger(callback)
+
+    await trigger.trigger(
+        42,
+        [{"role": "candidate", "content": "回答"}],
+        "manual",
+        "interview:42:grading",
+    )
+
+    assert callback.calls == [
+        (
+            "/interviews/42/grading-request",
+            {"reason": "manual", "requestId": "interview:42:grading"},
+        )
+    ]
+
+
 class GatedMessageSink(RecordingMessageSink):
     def __init__(self) -> None:
         super().__init__()
