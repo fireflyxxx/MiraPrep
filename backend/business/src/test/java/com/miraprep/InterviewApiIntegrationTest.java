@@ -316,6 +316,24 @@ class InterviewApiIntegrationTest {
     }
 
     @Test
+    void greetingPhaseIsRejectedAsAnOutlineQuestionAndFailsTheWholeOutline() throws Exception {
+        String token = registerAndGetAccessToken();
+        long sessionId = createInterview(token, uploadResume(token, "greeting-outline.pdf"));
+
+        postOutlineCallback(sessionId, """
+                {"status":"ready","questions":[
+                  {"phase":"greeting","text":"Say hello","focusPoints":[],"order":1,"suggestedSeconds":30}
+                ]}
+                """).andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/interviews/{id}/status", sessionId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.outlineStatus").value("failed"))
+                .andExpect(jsonPath("$.data.questionCount").value(0));
+    }
+
+    @Test
     void statusPollingReturnsForbiddenForAnotherUsersSessionAndNotFoundForMissingSession() throws Exception {
         String ownerToken = registerAndGetAccessToken();
         long sessionId = createInterview(ownerToken, uploadResume(ownerToken, "private-session.pdf"));
