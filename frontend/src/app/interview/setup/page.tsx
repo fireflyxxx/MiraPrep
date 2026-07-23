@@ -16,6 +16,7 @@ import {
   type InterviewDuration,
   type InterviewerStyle,
 } from "@/lib/api/interview";
+import { storeInterviewRuntimeToken } from "@/lib/api/interview-stream";
 import { ApiError } from "@/lib/api/types";
 import {
   difficultyOptions,
@@ -150,6 +151,9 @@ export default function InterviewSetupPage() {
         try {
           const created = await createInterview(input);
           sessionId = created.sessionId;
+          if (created.runtimeToken) {
+            storeInterviewRuntimeToken(created.sessionId, created.runtimeToken);
+          }
         } catch (error) {
           if (!mounted.current || controller.signal.aborted) return;
           const status = error instanceof ApiError ? error.status : undefined;

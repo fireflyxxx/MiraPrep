@@ -26,6 +26,8 @@ export interface CreateInterviewInput {
 export interface CreateInterviewResponse {
   sessionId: number;
   outlineStatus: OutlineStatus;
+  /** T-040 的会话专用令牌；后端运行时交接完成前可能暂缺。 */
+  runtimeToken?: string;
 }
 
 export interface InterviewStatusResponse {

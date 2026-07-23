@@ -68,6 +68,7 @@ vi.mock("@/lib/api/interview", () => ({
 describe("InterviewSetupPage", () => {
   beforeEach(() => {
     push.mockReset();
+    window.sessionStorage.clear();
     vi.mocked(createInterview).mockReset();
     vi.mocked(pollInterviewUntilSettled).mockReset();
   });
@@ -90,6 +91,7 @@ describe("InterviewSetupPage", () => {
     vi.mocked(createInterview).mockResolvedValue({
       sessionId: 42,
       outlineStatus: "pending",
+      runtimeToken: "session-runtime-token",
     });
     vi.mocked(pollInterviewUntilSettled).mockResolvedValue({
       sessionId: 42,
@@ -130,6 +132,9 @@ describe("InterviewSetupPage", () => {
         transitionTypes: ["nav-forward"],
       }),
     );
+    expect(
+      window.sessionStorage.getItem("miraprep.interview-runtime-token.42"),
+    ).toBe("session-runtime-token");
   });
 
   it("shows a retry and return choice when outline generation fails", async () => {
