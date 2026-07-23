@@ -72,6 +72,20 @@ describe("InterviewSetupPage", () => {
     vi.mocked(pollInterviewUntilSettled).mockReset();
   });
 
+  it("keeps the voice switch thumb inside its track", async () => {
+    const user = userEvent.setup();
+    render(<InterviewSetupPage />);
+
+    await reachFinalStep(user);
+    const toggle = screen.getByRole("switch");
+    const thumb = toggle.querySelector("span");
+
+    expect(thumb).toHaveClass("left-1", "translate-x-0");
+    await user.click(toggle);
+    expect(thumb).toHaveClass("left-1", "translate-x-5");
+    expect(thumb).not.toHaveClass("translate-x-6");
+  });
+
   it("submits every T-032 field and enters the real session after the outline is ready", async () => {
     vi.mocked(createInterview).mockResolvedValue({
       sessionId: 42,

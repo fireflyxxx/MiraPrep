@@ -9,6 +9,14 @@
 # Root-level JavaScript dependencies and tool logs
 /node_modules/
 **/.black.log
+/.runtime/
+
+# Generated test and coverage reports
+**/coverage/
+**/htmlcov/
+**/coverage.xml
+**/.coverage
+**/.pytest_cache/
 
 # Generated Python bytecode and IDE metadata
 **/__pycache__/

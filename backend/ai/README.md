@@ -39,4 +39,9 @@ Set-Location backend/ai
 uv run pytest -q
 uv run ruff check .
 uv run black --check .
+uv run python -m compileall -q app
+uv run pytest --cov=app --cov-report=term-missing --cov-report=xml:coverage.xml --cov-report=html:htmlcov
 ```
+
+最后一条命令会生成终端、XML 和 HTML 三种覆盖率报告，HTML 入口为
+`htmlcov/index.html`。内部鉴权必须同时覆盖成功与拒绝分支；LLM、回调和外部服务在单元测试中使用 mock，避免测试依赖真实密钥与网络。

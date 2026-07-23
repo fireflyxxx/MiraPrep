@@ -18,6 +18,22 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+## Development checks
+
+Run the same checks used by CI before opening a pull request:
+
+```bash
+npm ci
+npm run lint
+npm test
+npm run test:coverage
+npm run build
+```
+
+Vitest uses Testing Library and jsdom. Add or update tests whenever a change introduces
+new data, interaction, loading, or error branches. The HTML coverage report is written
+to `coverage/index.html`.
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More

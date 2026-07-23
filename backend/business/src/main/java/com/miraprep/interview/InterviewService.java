@@ -198,9 +198,13 @@ public class InterviewService {
     }
 
     private Question toQuestion(InterviewSession session, OutlineQuestionRequest request) {
+        InterviewPhase phase = enumValue(InterviewPhase.class, request.phase());
+        if (phase == InterviewPhase.GREETING) {
+            throw new BusinessException(ErrorCode.INVALID_PARAM);
+        }
         Question question = new Question();
         question.setSession(session);
-        question.setPhase(enumValue(InterviewPhase.class, request.phase()));
+        question.setPhase(phase);
         question.setText(request.text().trim());
         question.setFocusPoints(request.focusPoints() == null ? List.of() : List.copyOf(request.focusPoints()));
         question.setSortOrder(request.order());

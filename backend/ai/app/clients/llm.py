@@ -16,6 +16,7 @@ def get_chat_model(
     model: str | None = None,
     *,
     settings: Settings | None = None,
+    thinking: dict[str, Any] | None = None,
 ) -> ChatAnthropic:
     """Build the shared LangChain Anthropic chat model from MiraPrep settings."""
 
@@ -27,6 +28,8 @@ def get_chat_model(
     }
     if resolved.anthropic_base_url:
         options["base_url"] = resolved.anthropic_base_url
+    if thinking is not None:
+        options["thinking"] = thinking
     return ChatAnthropic(**options)
 
 
@@ -67,9 +70,11 @@ class LlmClient:
         self,
         settings: Settings,
         model: Any | None = None,
+        *,
+        thinking: dict[str, Any] | None = None,
     ) -> None:
         self._settings = settings
-        self._model = model or get_chat_model(settings=settings)
+        self._model = model or get_chat_model(settings=settings, thinking=thinking)
 
     @property
     def chat_model(self) -> Any:
@@ -80,11 +85,6 @@ class LlmClient:
 
     async def aclose(self) -> None:
         close = getattr(self._model, "aclose", None)
-        if close is not None:
-            await close()
-            return
-        async_client = getattr(self._model, "_async_client", None)
-        close = getattr(async_client, "close", None)
         if close is not None:
             result = close()
             if inspect.isawaitable(result):
