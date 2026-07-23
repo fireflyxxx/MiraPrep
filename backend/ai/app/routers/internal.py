@@ -24,7 +24,9 @@ def _build_service(settings: Settings) -> ResumeParseService:
     生产环境用真客户端；测试通过 FastAPI 的 dependency_overrides 替换。
     """
 
-    llm = LlmClient(settings)
+    # 简历解析是固定 schema 的信息抽取，不需要推理过程；同时避免思考模式
+    # 与 LangChain 强制结构化工具调用的 tool_choice 冲突。
+    llm = LlmClient(settings, thinking={"type": "disabled"})
     callback = BusinessCallbackClient(settings)
     return ResumeParseService(llm=llm, callback=callback)
 
@@ -40,7 +42,9 @@ def get_resume_parse_service(
 def _build_outline_service(settings: Settings) -> OutlineGenerationService:
     """组装一次大纲生成任务专用的外部客户端。"""
 
-    llm = LlmClient(settings)
+    # LangChain 的结构化输出通过工具调用约束 JSON；Anthropic 思考模式不支持
+    # 强制 tool_choice，因此大纲抽取与简历解析一样显式关闭思考模式。
+    llm = LlmClient(settings, thinking={"type": "disabled"})
     callback = BusinessCallbackClient(settings)
     return OutlineGenerationService(llm=llm, callback=callback)
 

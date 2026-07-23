@@ -54,7 +54,45 @@ MiraPrep/
 
 ## 🚀 快速开始
 
-> 目前**前端可独立运行**（数据为本地 mock，无需后端）。两个后端服务尚在规划中，落地方式见 `docs/tasks/`。
+### Windows 一键启动（推荐）
+
+完整开发环境包含 Next.js、Spring Boot、FastAPI，以及 Docker 中的 MySQL、Redis、MinIO。首次运行前准备本地配置：
+
+```powershell
+Copy-Item infra\.env.example infra\.env
+Copy-Item backend\ai\.env.example backend\ai\.env
+Copy-Item frontend\.env.example frontend\.env.local
+```
+
+然后填写 `infra/.env` 的本地数据库与 MinIO 配置，并在 `backend/ai/.env` 中填写真实的模型 API Key、模型名和兼容接口地址。不要手工维护两份内部令牌；一键脚本会在 `.runtime/dev-internal-token` 生成唯一令牌，并同时注入 Spring 的 `AI_INTERNAL_TOKEN` 与 AI 的 `INTERNAL_TOKEN`。
+
+在仓库根目录执行：
+
+```powershell
+.\scripts\dev-up.ps1
+```
+
+脚本会依次启动基础设施、AI 后端、Spring 后端和前端，并验证两个受保护的内部接口。启动日志位于 `.runtime/logs/`。关闭全部开发服务：
+
+```powershell
+.\scripts\dev-down.ps1
+```
+
+停止时保留 Docker 基础设施：
+
+```powershell
+.\scripts\dev-down.ps1 -KeepInfra
+```
+
+如果 PowerShell 阻止脚本执行，可以只对本次命令放行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\dev-up.ps1
+```
+
+环境要求：Docker Desktop、JDK 21、Node.js ≥ 20、`uv`。可先执行 `.\scripts\dev-up.ps1 -ValidateOnly` 检查配置和命令是否齐全，该操作不会启动服务。
+
+### 仅启动前端
 
 **环境要求**：Node.js ≥ 20（推荐 24）
 
@@ -72,7 +110,7 @@ npm run start        # 运行生产构建
 npm run lint         # 代码检查
 ```
 
-### 本地开发环境
+### 手动启动基础设施
 
 完整启动顺序见 [工程开发总纲 §5](docs/DEVELOPMENT.md#5-本地开发环境)。先启动基础设施：
 

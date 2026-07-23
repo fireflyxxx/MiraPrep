@@ -410,13 +410,13 @@ export default function InterviewSetupPage() {
                   aria-label="启用语音面试"
                   aria-checked={voiceEnabled}
                   onClick={() => setVoiceEnabled((enabled) => !enabled)}
-                  className={`relative h-7 w-12 rounded-full transition-colors ${
+                  className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
                     voiceEnabled ? "bg-orange-500" : "bg-border"
                   }`}
                 >
                   <span
-                    className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
-                      voiceEnabled ? "translate-x-6" : "translate-x-1"
+                    className={`absolute top-1 left-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                      voiceEnabled ? "translate-x-5" : "translate-x-0"
                     }`}
                   />
                 </button>

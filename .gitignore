@@ -9,6 +9,7 @@
 # Root-level JavaScript dependencies and tool logs
 /node_modules/
 **/.black.log
+/.runtime/
 
 # Generated Python bytecode and IDE metadata
 **/__pycache__/
