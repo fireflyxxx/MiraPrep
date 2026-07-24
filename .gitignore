@@ -22,3 +22,6 @@
 **/__pycache__/
 *.py[cod]
 **/.idea/
+
+# 本地验收产物（截图等）
+output/

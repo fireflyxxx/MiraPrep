@@ -6,35 +6,23 @@ import os
 from uuid import uuid4
 
 import pytest
+from conftest import redis_client as _redis
 from langchain_core.runnables import RunnableLambda
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
-from redis.asyncio import Redis
 from redis.exceptions import RedisError
+from redisvl.exceptions import RedisVLError
 
 from app.schemas.interview import AgentDecision, InterviewSessionState
 from app.services.interview_graph import build_interview_graph
 from app.services.session_state import RedisSessionStateStore, ReplayGapError
 
-
-def _redis() -> Redis:
-    return Redis(
-        host=os.getenv("MIRAPREP_TEST_REDIS_HOST", "localhost"),
-        port=int(os.getenv("MIRAPREP_TEST_REDIS_PORT", "6379")),
-        decode_responses=True,
-        socket_connect_timeout=0.5,
-        socket_timeout=1,
-    )
+pytestmark = pytest.mark.usefixtures("require_redis")
 
 
 @pytest.mark.asyncio
 async def test_redis_store_persists_state_and_assigns_atomic_event_sequences() -> None:
     redis = _redis()
     try:
-        try:
-            await redis.ping()
-        except RedisError:
-            pytest.skip("local Redis is not available")
-
         session_id = 9_000_000_000 + uuid4().int % 1_000_000_000
         store = RedisSessionStateStore(redis, ttl_seconds=60)
         state = InterviewSessionState(
@@ -81,9 +69,8 @@ async def test_redis_store_persists_state_and_assigns_atomic_event_sequences() -
         assert (await store.get(session_id)).status == "ENDED"
         assert await store.session_ids() == []
     finally:
-        if "session_id" in locals():
-            await redis.delete(*RedisSessionStateStore._keys(session_id))
-            await redis.srem("miraprep:interview:active", session_id)
+        await redis.delete(*RedisSessionStateStore._keys(session_id))
+        await redis.srem("miraprep:interview:active", session_id)
         await redis.aclose()
 
 
@@ -91,11 +78,6 @@ async def test_redis_store_persists_state_and_assigns_atomic_event_sequences() -
 async def test_redis_lock_renews_while_a_long_llm_turn_is_running() -> None:
     redis = _redis()
     try:
-        try:
-            await redis.ping()
-        except RedisError:
-            pytest.skip("local Redis is not available")
-
         session_id = 9_000_000_000 + uuid4().int % 1_000_000_000
         store = RedisSessionStateStore(
             redis,
@@ -109,8 +91,7 @@ async def test_redis_lock_renews_while_a_long_llm_turn_is_running() -> None:
 
         assert await redis.exists(f"miraprep:interview:{session_id}:lock") == 0
     finally:
-        if "session_id" in locals():
-            await redis.delete(f"miraprep:interview:{session_id}:lock")
+        await redis.delete(f"miraprep:interview:{session_id}:lock")
         await redis.aclose()
 
 
@@ -118,10 +99,6 @@ async def test_redis_lock_renews_while_a_long_llm_turn_is_running() -> None:
 async def test_redis_store_reports_replay_gap_after_old_events_are_trimmed() -> None:
     redis = _redis()
     try:
-        try:
-            await redis.ping()
-        except RedisError:
-            pytest.skip("local Redis is not available")
         session_id = 9_000_000_000 + uuid4().int % 1_000_000_000
         store = RedisSessionStateStore(redis, ttl_seconds=60, event_limit=3)
         state = InterviewSessionState(
@@ -149,9 +126,8 @@ async def test_redis_store_reports_replay_gap_after_old_events_are_trimmed() -> 
             await store.events_after(session_id, 1)
         assert [event.seq for event in await store.events_after(session_id, 3)] == [4, 5]
     finally:
-        if "session_id" in locals():
-            await redis.delete(*RedisSessionStateStore._keys(session_id))
-            await redis.srem("miraprep:interview:active", session_id)
+        await redis.delete(*RedisSessionStateStore._keys(session_id))
+        await redis.srem("miraprep:interview:active", session_id)
         await redis.aclose()
 
 
@@ -162,18 +138,12 @@ async def test_langgraph_checkpoint_survives_saver_reconstruction() -> None:
     redis = _redis()
     thread_id = f"checkpoint-{uuid4()}"
     redis_url = f"redis://{host}:{port}"
-    redis_available = False
     try:
-        try:
-            await redis.ping()
-            redis_available = True
-        except RedisError:
-            pytest.skip("local Redis is not available")
-
         first_saver = AsyncRedisSaver(redis_url=redis_url, ttl={"default_ttl": 1})
         try:
             await first_saver.asetup()
-        except RedisError:
+        except (RedisError, RedisVLError):
+            # redisvl 会把 "unknown command FT.INFO" 包成 RedisSearchError，它不是 RedisError。
             await first_saver._redis.aclose()
             pytest.skip("RedisJSON/RediSearch modules are not available")
 
@@ -203,10 +173,7 @@ async def test_langgraph_checkpoint_survives_saver_reconstruction() -> None:
         assert checkpoint.values["messages"][-1]["content"] == "回答"
         await restarted_saver._redis.aclose()
     finally:
-        if redis_available:
-            keys = []
-            async for key in redis.scan_iter(match=f"*{thread_id}*"):
-                keys.append(key)
-            if keys:
-                await redis.delete(*keys)
+        keys = [key async for key in redis.scan_iter(match=f"*{thread_id}*")]
+        if keys:
+            await redis.delete(*keys)
         await redis.aclose()

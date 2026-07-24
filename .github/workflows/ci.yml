@@ -19,6 +19,19 @@ jobs:
   quality:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
+    # ponytail: 起给整个 matrix，GitHub Actions 的 services 无法按 leg 条件化；
+    # 前端/Spring 多花几秒拉镜像，换掉一份条件化 docker run 脚本。
+    services:
+      redis:
+        # ponytail: 必须带 RediSearch/RedisJSON，langgraph 的 AsyncRedisSaver 依赖它们；
+        # redis:7-alpine 没有模块，会让 checkpoint 用例直接失败而不是跳过。
+        image: redis:8-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     strategy:
       fail-fast: false
       matrix:

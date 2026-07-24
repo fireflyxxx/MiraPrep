@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,6 +27,25 @@ describe("DashboardShell", () => {
     await user.click(screen.getByRole("button", { name: /真实用户/ }));
 
     expect(screen.queryByText("3 / 5 场")).not.toBeInTheDocument();
+  });
+
+  it("keeps all three application areas and logout reachable from the mobile navigation", () => {
+    render(<QueryClientProvider client={createQueryClient()}><DashboardShell><p>dashboard</p></DashboardShell></QueryClientProvider>);
+
+    const navigation = screen.getByRole("navigation", { name: "移动端主导航" });
+    expect(within(navigation).getByRole("link", { name: "工作台" })).toHaveAttribute("href", "/dashboard");
+    expect(within(navigation).getByRole("link", { name: "我的面试" })).toHaveAttribute("href", "/interviews");
+    expect(within(navigation).getByRole("link", { name: "题库训练" })).toHaveAttribute("href", "/practice");
+    expect(within(navigation).getByRole("button", { name: "退出" })).toBeInTheDocument();
+  });
+
+  // jsdom 不跑 Tailwind，媒体查询断言不了；退而求其次守住两个断点类互补，
+  // 任何一边被删掉都会让 <md 或 >=md 少掉全部导航入口。
+  it("keeps the desktop sidebar and the mobile bar on complementary breakpoints", () => {
+    render(<QueryClientProvider client={createQueryClient()}><DashboardShell><p>dashboard</p></DashboardShell></QueryClientProvider>);
+
+    expect(document.querySelector("aside")).toHaveClass("hidden", "md:flex");
+    expect(screen.getByRole("navigation", { name: "移动端主导航" })).toHaveClass("md:hidden");
   });
 
   it("clears credentials and the user cache before redirecting on logout", async () => {

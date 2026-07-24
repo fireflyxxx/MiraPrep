@@ -3,24 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from uuid import uuid4
 
 import pytest
+from conftest import redis_client as _redis
 from redis.asyncio import Redis
-from redis.exceptions import RedisError
 
 from app.services.grading import RedisGradingJobStore
 
-
-def _redis() -> Redis:
-    return Redis(
-        host=os.getenv("MIRAPREP_TEST_REDIS_HOST", "localhost"),
-        port=int(os.getenv("MIRAPREP_TEST_REDIS_PORT", "6379")),
-        decode_responses=True,
-        socket_connect_timeout=0.5,
-        socket_timeout=1,
-    )
+pytestmark = pytest.mark.usefixtures("require_redis")
 
 
 def _isolated_store(redis: Redis, namespace: str) -> RedisGradingJobStore:
@@ -56,11 +47,6 @@ async def test_redis_grading_store_atomically_deduplicates_and_requeues() -> Non
     }
     stored_payload = {**payload, "revision": 1}
     try:
-        try:
-            await redis.ping()
-        except RedisError:
-            pytest.skip("local Redis is not available")
-
         results = await asyncio.gather(*(store.enqueue(session_id, payload) for _ in range(10)))
 
         assert results.count(True) == 1
@@ -96,11 +82,6 @@ async def test_redis_grading_store_recovers_claimed_job_after_restart() -> None:
     }
     stored_payload = {**payload, "revision": 1}
     try:
-        try:
-            await redis.ping()
-        except RedisError:
-            pytest.skip("local Redis is not available")
-
         assert await first_store.enqueue(session_id, payload) is True
         assert await first_store.claim() == (session_id, stored_payload)
         assert await first_store.persist_inflight(session_id, stored_payload, 1)
@@ -134,11 +115,6 @@ async def test_redis_grading_store_new_revision_supersedes_inflight_request() ->
         "request": {"sessionId": session_id, "partial": False},
     }
     try:
-        try:
-            await redis.ping()
-        except RedisError:
-            pytest.skip("local Redis is not available")
-
         assert await store.enqueue(session_id, partial)
         claimed = await store.claim()
         assert claimed is not None
@@ -173,11 +149,6 @@ async def test_redis_grading_store_moves_exhausted_delivery_to_dead_letter() -> 
         "callbackPayload": {"grade": "A"},
     }
     try:
-        try:
-            await redis.ping()
-        except RedisError:
-            pytest.skip("local Redis is not available")
-
         assert await store.enqueue(session_id, payload)
         claimed = await store.claim()
         assert claimed is not None
