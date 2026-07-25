@@ -1,3 +1,6 @@
+"use client";
+
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { apiClient } from "./client";
 import { endpoints } from "./endpoints";
 import { pollUntilSettled, type PollOptions } from "./poll";
@@ -9,6 +12,9 @@ export type InterviewDifficulty = "easy" | "medium" | "hard";
 export type InterviewerStyle = "friendly" | "balanced" | "strict";
 export type InterviewDuration = 15 | 30 | 45;
 export type OutlineStatus = "pending" | "ready" | "failed";
+export type InterviewSessionStatus = "created" | "ongoing" | "completed" | "aborted";
+export type InterviewReportStatus = "none" | "grading" | "ready" | "failed";
+export type InterviewGrade = "S" | "A" | "B" | "C" | "D";
 
 export interface CreateInterviewInput {
   resumeId: number;
@@ -37,6 +43,37 @@ export interface InterviewStatusResponse {
   questionCount: number;
 }
 
+export interface InterviewListItem {
+  sessionId: number;
+  jobTitle: string;
+  difficulty: InterviewDifficulty;
+  durationMin: number;
+  actualDurationSeconds: number | null;
+  questionCount: number;
+  status: InterviewSessionStatus;
+  grade: InterviewGrade | null;
+  reportStatus: InterviewReportStatus;
+  createdAt: string;
+  endedAt: string | null;
+}
+
+export interface InterviewListResponse {
+  items: InterviewListItem[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export interface InterviewListParams {
+  page?: number;
+  size?: number;
+  status?: InterviewSessionStatus;
+}
+
+export const interviewListKey = (params: Required<Pick<InterviewListParams, "page" | "size">> & {
+  status?: InterviewSessionStatus;
+}) => ["interviews", "list", params] as const;
+
 export async function createInterview(
   input: CreateInterviewInput,
 ): Promise<CreateInterviewResponse> {
@@ -54,6 +91,32 @@ export async function getInterviewStatus(
     `${endpoints.interviews}/${sessionId}/status`,
     { signal },
   );
+}
+
+export async function listInterviews(
+  params: InterviewListParams = {},
+): Promise<InterviewListResponse> {
+  const page = params.page ?? 1;
+  const size = params.size ?? 20;
+  const search = new URLSearchParams({
+    page: String(page),
+    size: String(size),
+  });
+  if (params.status) search.set("status", params.status);
+  return apiClient<InterviewListResponse>(`${endpoints.interviews}?${search}`);
+}
+
+export function useInterviewList(params: InterviewListParams = {}) {
+  const normalized = {
+    page: params.page ?? 1,
+    size: params.size ?? 20,
+    ...(params.status ? { status: params.status } : {}),
+  };
+  return useQuery({
+    queryKey: interviewListKey(normalized),
+    queryFn: () => listInterviews(normalized),
+    placeholderData: keepPreviousData,
+  });
 }
 
 export async function pollInterviewUntilSettled(

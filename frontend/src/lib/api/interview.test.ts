@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createInterview,
   getInterviewStatus,
+  listInterviews,
   pollInterviewUntilSettled,
   type CreateInterviewInput,
   type InterviewStatusResponse,
@@ -64,6 +65,25 @@ describe("interview API", () => {
     await expect(getInterviewStatus(42)).resolves.toEqual(pending);
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8080/api/v1/interviews/42/status",
+      expect.any(Object),
+    );
+  });
+
+  it("lists interviews with the frozen pagination and status query", async () => {
+    const page = {
+      items: [],
+      total: 0,
+      page: 2,
+      size: 5,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(okResponse(page));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      listInterviews({ page: 2, size: 5, status: "completed" }),
+    ).resolves.toEqual(page);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8080/api/v1/interviews?page=2&size=5&status=completed",
       expect.any(Object),
     );
   });

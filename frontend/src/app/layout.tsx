@@ -36,6 +36,7 @@ export default function RootLayout({
     <html
       lang="zh"
       className={`${spaceGrotesk.variable} ${notoSansSC.variable}`}
+      data-scroll-behavior="smooth"
       suppressHydrationWarning
     >
       <body className="min-h-screen bg-background font-sans text-foreground antialiased">

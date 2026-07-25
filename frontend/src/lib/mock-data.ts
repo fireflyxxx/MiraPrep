@@ -124,30 +124,3 @@ export const skillOptions = [
   "CSS / 动画",
   "性能优化",
 ];
-
-export const interviewHistory = [
-  {
-    grade: "A-",
-    gradeBg: "#fff5ee",
-    gradeColor: "#f97316",
-    role: "前端工程师 · 中级",
-    meta: "8 题 · 用时 42 分钟",
-    when: "2 天前",
-  },
-  {
-    grade: "B+",
-    gradeBg: "#f5f5f5",
-    gradeColor: "#525252",
-    role: "前端工程师 · 中级",
-    meta: "8 题 · 用时 38 分钟",
-    when: "5 天前",
-  },
-  {
-    grade: "B",
-    gradeBg: "#f5f5f5",
-    gradeColor: "#525252",
-    role: "前端工程师 · 初级",
-    meta: "6 题 · 用时 29 分钟",
-    when: "上周",
-  },
-];

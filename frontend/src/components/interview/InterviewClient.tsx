@@ -22,6 +22,7 @@ import {
   type InterviewMessage,
   type InterviewStreamEvent,
 } from "@/lib/api/interview-stream";
+import { phaseLabels } from "@/lib/interview-options";
 
 type ConnectionState = "connecting" | "connected" | "reconnecting" | "failed";
 
@@ -46,16 +47,6 @@ const phaseOrder = [
   "CANDIDATE_QA",
   "CLOSING",
 ] as const;
-
-const phaseLabels: Record<string, string> = {
-  GREETING: "开场",
-  SELF_INTRO: "自我介绍",
-  RESUME_DEEP_DIVE: "项目深挖",
-  DOMAIN_ASSESSMENT: "专业评估",
-  BEHAVIORAL: "行为面试",
-  CANDIDATE_QA: "候选人提问",
-  CLOSING: "收尾",
-};
 
 const reconnectDelays = [1_000, 2_000, 4_000, 8_000, 15_000];
 
