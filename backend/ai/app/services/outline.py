@@ -34,6 +34,8 @@ _HR_BUDGETS = {
     30: (1, 1, 2, 2, 1, 1),
     45: (1, 2, 4, 2, 1, 1),
 }
+# 开场题是唯一在面试开始前定稿的题目。
+OPENING_BUDGET = {InterviewPhase.SELF_INTRO: 1}
 
 
 def build_outline_chain(model: Any) -> Any:
@@ -72,10 +74,15 @@ class OutlineGenerationService:
         self._callback = callback
 
     async def generate_outline(self, request: OutlineRequest) -> None:
-        """生成大纲；所有后台失败都收敛为 failed 回调。"""
+        """
+        只定稿开场题；其余题目由运行时按阶段预算动态生成（见 services/next_question.py）。
+
+        阶段预算仍由 build_phase_budget 决定，运行时用同一个函数重算，
+        所以这里不需要把规划回传给 Spring。
+        """
 
         try:
-            budget = build_phase_budget(request.config.durationMin, request.config.types)
+            budget = OPENING_BUDGET
             try:
                 result = await build_outline_chain(self._llm).ainvoke(
                     {
@@ -169,13 +176,14 @@ def _validate_outline(
     if total_seconds > request.config.durationMin * 60:
         raise _OutlineValidationError("suggested duration exceeds interview duration")
 
+    deep_dive_text = "\n".join(
+        question.text.casefold()
+        for question in questions
+        if question.phase is InterviewPhase.RESUME_DEEP_DIVE
+    )
+    # 这一批没有深挖题时（例如只定稿开场题）不适用，简历 grounding 由运行时出题负责。
     resume_facts = _extract_resume_facts(request.resume.parsedJson)
-    if resume_facts:
-        deep_dive_text = "\n".join(
-            question.text.casefold()
-            for question in questions
-            if question.phase is InterviewPhase.RESUME_DEEP_DIVE
-        )
+    if resume_facts and deep_dive_text:
         if not any(fact.casefold() in deep_dive_text for fact in resume_facts):
             raise _OutlineValidationError("deep-dive questions do not reference resume facts")
 

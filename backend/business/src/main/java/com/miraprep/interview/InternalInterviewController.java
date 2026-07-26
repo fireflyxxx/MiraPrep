@@ -1,6 +1,8 @@
 package com.miraprep.interview;
 
 import com.miraprep.common.response.ApiResponse;
+import com.miraprep.interview.dto.AppendQuestionRequest;
+import com.miraprep.interview.dto.AppendQuestionResponse;
 import com.miraprep.interview.dto.InterviewMessageResponse;
 import com.miraprep.interview.dto.OutlineResultRequest;
 import com.miraprep.interview.dto.RuntimeGradingRequest;
@@ -42,6 +44,12 @@ public class InternalInterviewController {
     public ApiResponse<InterviewMessageResponse> writeMessage(
             @PathVariable Long id, @Valid @RequestBody WriteInterviewMessageRequest request) {
         return ApiResponse.ok(interviewMessageService.write(id, request));
+    }
+
+    @PostMapping("/{id}/questions")
+    public ApiResponse<AppendQuestionResponse> appendQuestion(
+            @PathVariable Long id, @Valid @RequestBody AppendQuestionRequest request) {
+        return ApiResponse.ok(interviewService.appendQuestion(id, request));
     }
 
     @PostMapping("/{id}/grading-request")

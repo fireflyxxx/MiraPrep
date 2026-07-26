@@ -65,7 +65,7 @@ def get_shared_grading_task_queue() -> GradingTaskQueue:
 
     def build_service() -> GradingService:
         model = get_chat_model(
-            settings.anthropic_grading_model,
+            settings.resolved_grading_model,
             settings=settings,
             thinking={"type": "disabled"},
         )

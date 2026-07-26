@@ -28,6 +28,14 @@ def _start_payload() -> dict:
         "durationMin": 15,
         "interviewerStyle": "professional",
         "accessToken": "test-runtime-token-40-at-least-32-chars",
+        "config": {
+            "jobDirection": "backend",
+            "difficulty": "medium",
+            "types": ["technical"],
+            "durationMin": 15,
+            "interviewerStyle": "professional",
+        },
+        "resume": {"parsedJson": {"skills": ["FastAPI"]}},
         "questions": [
             {
                 "questionId": "q-self-intro",

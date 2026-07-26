@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     anthropic_api_key: SecretStr
     anthropic_model: str = "claude-sonnet-5"
-    anthropic_grading_model: str = "claude-opus-4-8"
+    anthropic_grading_model: str | None = None
     grading_worker_count: int = Field(default=2, ge=1, le=8)
     grading_max_delivery_attempts: int = Field(default=5, ge=1, le=100)
     anthropic_base_url: str | None = None
@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     @property
     def allowed_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def resolved_grading_model(self) -> str:
+        return self.anthropic_grading_model or self.anthropic_model
 
 
 @lru_cache

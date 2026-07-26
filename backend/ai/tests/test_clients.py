@@ -32,6 +32,15 @@ def test_settings_accepts_anthropic_compatible_base_url() -> None:
     assert settings.anthropic_base_url == "https://api.deepseek.com/anthropic"
 
 
+def test_grading_model_follows_primary_model_when_not_explicitly_configured() -> None:
+    settings = Settings(
+        anthropic_model="deepseek-v4-pro",
+        anthropic_grading_model=None,
+    )
+
+    assert settings.resolved_grading_model == "deepseek-v4-pro"
+
+
 def test_llm_client_passes_configuration_to_chat_anthropic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

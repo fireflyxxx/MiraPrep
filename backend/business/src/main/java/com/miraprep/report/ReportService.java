@@ -194,8 +194,21 @@ public class ReportService {
         review.setScore(result.score());
         review.setReferenceAnswer(result.referenceAnswer().trim());
         review.setSuggestions(List.copyOf(result.suggestions()));
-        review.setFollowUpChainJson(List.copyOf(result.followUpChain()));
+        review.setFollowUpChainJson(result.followUpChain().stream()
+                .map(this::followUpMap)
+                .map(value -> (Object) value)
+                .toList());
         return review;
+    }
+
+    private Map<String, Object> followUpMap(GradeResultRequest.FollowUpReviewResult result) {
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("question", result.question().trim());
+        value.put("answer", result.answer().trim());
+        value.put("answerSeconds", result.answerSeconds());
+        value.put("referenceAnswer", result.referenceAnswer().trim());
+        value.put("suggestions", List.copyOf(result.suggestions()));
+        return value;
     }
 
     private Map<String, Object> dimensionMap(GradeResultRequest.DimensionScores scores) {

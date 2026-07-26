@@ -46,3 +46,8 @@
 PR 贴：2–3 组不同配置的大纲输出、时长/风格差异对比、回调 payload。
 
 ## 遗留/发现
+- **契约变更（2026-07-26）：改为动态出题**。大纲阶段不再一次性生成全部题目，只定稿开场题
+  （`OPENING_BUDGET = {SELF_INTRO: 1}`）；其余题目由运行时在轮到时生成，见
+  `app/services/next_question.py` 与 PRD §5.1「题目规划（动态出题）」。阶段预算函数
+  `build_phase_budget` 保留，运行时用同一个函数重算，所以不需要把规划回传给 Spring。
+  `_validate_outline` 的简历 grounding 检查仅在这批含 RESUME_DEEP_DIVE 题时生效。

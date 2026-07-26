@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from decimal import Decimal, ROUND_HALF_UP
 from hashlib import sha256
 import json
 import logging
 from typing import Any, Protocol
 
+from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
+from pydantic import ValidationError
 
 from app.clients.business import BusinessCallbackClient
 from app.clients.llm import LlmClient
@@ -23,6 +25,7 @@ from app.prompts.grading import (
 )
 from app.schemas.grading import (
     DimensionScores,
+    FollowUpReview,
     GradingReport,
     GradingRequest,
     QuestionReview,
@@ -69,6 +72,8 @@ _TYPE_WEIGHTS = {
         "jobFit": Decimal("0.20"),
     },
 }
+_STRUCTURED_OUTPUT_ATTEMPTS = 3
+_PLAIN_JSON_ATTEMPTS = 2
 
 
 def _round_score(value: Decimal) -> int:
@@ -153,18 +158,109 @@ def _build_chain(model: Any, system_prompt: str, schema: type[Any]) -> Any:
     return prompt | chat_model.with_structured_output(schema)
 
 
+async def _invoke_structured(
+    chain: Any,
+    grading_data: str,
+    *,
+    output_kind: str,
+    plain_json_fallback: Callable[[], Awaitable[Any]] | None = None,
+) -> Any:
+    for attempt in range(1, _STRUCTURED_OUTPUT_ATTEMPTS + 1):
+        try:
+            return await chain.ainvoke({"grading_data": grading_data})
+        except (OutputParserException, ValidationError):
+            if attempt == _STRUCTURED_OUTPUT_ATTEMPTS:
+                if plain_json_fallback is None:
+                    raise
+                logger.warning(
+                    "grading %s exhausted structured output; falling back to plain JSON",
+                    output_kind,
+                )
+                return await plain_json_fallback()
+            logger.warning(
+                "grading %s returned invalid structured output; retrying attempt=%s",
+                output_kind,
+                attempt + 1,
+            )
+    raise AssertionError("unreachable")
+
+
+def _extract_json_object(raw: str) -> str:
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`").strip()
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:].strip()
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start < 0 or end < start:
+        raise ValueError("plain grading response did not contain a JSON object")
+    return cleaned[start : end + 1]
+
+
+async def _invoke_plain_json(
+    llm: Any,
+    *,
+    schema: type[Any],
+    system_prompt: str,
+    grading_data: str,
+    output_kind: str,
+) -> Any:
+    schema_json = json.dumps(schema.model_json_schema(), ensure_ascii=False)
+    prompt = (
+        f"{grading_data}\n"
+        "The provider could not complete a tool call. Return one JSON object only, "
+        "without Markdown or explanation, matching this JSON Schema:\n"
+        f"{schema_json}"
+    )
+    for attempt in range(1, _PLAIN_JSON_ATTEMPTS + 1):
+        try:
+            raw = await llm.complete(
+                messages=[{"role": "user", "content": prompt}],
+                system=system_prompt,
+            )
+            return schema.model_validate_json(_extract_json_object(raw))
+        except (ValidationError, ValueError):
+            if attempt == _PLAIN_JSON_ATTEMPTS:
+                raise
+            logger.warning(
+                "grading %s returned invalid plain JSON; retrying attempt=%s",
+                output_kind,
+                attempt + 1,
+            )
+    raise AssertionError("unreachable")
+
+
 class GradingService:
     def __init__(self, llm: LlmClient) -> None:
         self._llm = llm
 
     async def grade(self, request: GradingRequest) -> GradingReport:
         question_chain = _build_chain(self._llm, GRADING_SYSTEM_PROMPT, QuestionReview)
-        reviews = await question_chain.abatch(
-            [
-                {"grading_data": build_question_prompt(request, question)}
-                for question in request.transcript
-            ],
-            config={"max_concurrency": 4},
+        question_slots = asyncio.Semaphore(4)
+
+        async def grade_question(grading_data: str) -> QuestionReview:
+            async with question_slots:
+                return await _invoke_structured(
+                    question_chain,
+                    grading_data,
+                    output_kind="question review",
+                    plain_json_fallback=lambda: _invoke_plain_json(
+                        self._llm,
+                        schema=QuestionReview,
+                        system_prompt=GRADING_SYSTEM_PROMPT,
+                        grading_data=grading_data,
+                        output_kind="question review",
+                    ),
+                )
+
+        reviews = list(
+            await asyncio.gather(
+                *(
+                    grade_question(build_question_prompt(request, question))
+                    for question in request.transcript
+                )
+            )
         )
         if len(reviews) != len(request.transcript):
             raise ValueError("llm returned incomplete question reviews")
@@ -174,26 +270,56 @@ class GradingService:
             raise ValueError("llm question ids do not match transcript")
         normalized_reviews: list[QuestionReview] = []
         for review in reviews:
+            transcript = transcript_by_id[review.questionId]
+            if len(review.followUpChain) != len(transcript.followUps):
+                raise ValueError("llm follow-up reviews do not match transcript")
+            normalized_follow_ups: list[FollowUpReview] = []
+            for source, generated in zip(transcript.followUps, review.followUpChain, strict=True):
+                if not isinstance(source, dict):
+                    raise ValueError("follow-up transcript item must be an object")
+                normalized_follow_ups.append(
+                    FollowUpReview(
+                        question=str(source.get("question", "")).strip(),
+                        answer=str(source.get("answer", "")).strip(),
+                        answerSeconds=source.get("answerSeconds"),
+                        referenceAnswer=generated.referenceAnswer.strip(),
+                        suggestions=list(generated.suggestions),
+                    )
+                )
             normalized_reviews.append(
                 review.model_copy(
                     update={
-                        "followUpChain": transcript_by_id[review.questionId].followUps,
+                        "followUpChain": normalized_follow_ups,
                     }
                 )
             )
 
         dimensions, total = aggregate_scores(request, normalized_reviews)
         grade = grade_for_score(total)
-        summary = await _build_chain(self._llm, SUMMARY_SYSTEM_PROMPT, SummaryReview).ainvoke(
-            {
-                "grading_data": build_summary_prompt(
+        summary_chain = _build_chain(self._llm, SUMMARY_SYSTEM_PROMPT, SummaryReview)
+        summary = await _invoke_structured(
+            summary_chain,
+            build_summary_prompt(
+                request,
+                question_reviews=[item.model_dump(mode="json") for item in normalized_reviews],
+                dimension_scores=dimensions.model_dump(mode="json"),
+                total_score=total,
+                grade=grade,
+            ),
+            output_kind="summary",
+            plain_json_fallback=lambda: _invoke_plain_json(
+                self._llm,
+                schema=SummaryReview,
+                system_prompt=SUMMARY_SYSTEM_PROMPT,
+                grading_data=build_summary_prompt(
                     request,
                     question_reviews=[item.model_dump(mode="json") for item in normalized_reviews],
                     dimension_scores=dimensions.model_dump(mode="json"),
                     total_score=total,
                     grade=grade,
-                )
-            }
+                ),
+                output_kind="summary",
+            ),
         )
         return GradingReport(
             grade=grade,
@@ -238,17 +364,24 @@ class RedisGradingJobStore:
     _DEAD_LETTER_KEY = "miraprep:grading:dead-letter"
     _JOB_PREFIX = "miraprep:grading:job:"
     _ENQUEUE_SCRIPT = """
-    local incoming = cjson.decode(ARGV[1])
+    local incoming_raw = ARGV[1]
+    local incoming = cjson.decode(incoming_raw)
+    local function with_revision(raw, revision)
+        return string.sub(raw, 1, 1)
+            .. '"revision":'
+            .. tostring(revision)
+            .. ','
+            .. string.sub(raw, 2)
+    end
     local current_raw = redis.call('GET', KEYS[1])
     if current_raw then
         local current = cjson.decode(current_raw)
         if current.requestHash == incoming.requestHash then return 0 end
-        incoming.revision = (current.revision or 0) + 1
-        redis.call('SET', KEYS[1], cjson.encode(incoming))
+        local revision = (current.revision or 0) + 1
+        redis.call('SET', KEYS[1], with_revision(incoming_raw, revision))
         return 1
     end
-    incoming.revision = 1
-    redis.call('SET', KEYS[1], cjson.encode(incoming))
+    redis.call('SET', KEYS[1], with_revision(incoming_raw, 1))
     redis.call('LPUSH', KEYS[2], ARGV[2])
     return 1
     """

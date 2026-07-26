@@ -49,6 +49,28 @@ export const interviewerStyleOptions: Array<{
   { id: "strict", label: "高压追问", description: "持续追问细节与边界情况" },
 ];
 
+/** 后端 `InterviewPhase` 枚举。报告接口回传小写，所以查表前先 normalize。 */
+export const phaseLabels: Record<string, string> = {
+  GREETING: "开场",
+  SELF_INTRO: "自我介绍",
+  RESUME_DEEP_DIVE: "项目深挖",
+  DOMAIN_ASSESSMENT: "专业评估",
+  BEHAVIORAL: "行为面试",
+  CANDIDATE_QA: "候选人提问",
+  CLOSING: "收尾",
+};
+
+export function phaseLabel(phase: string): string {
+  return phaseLabels[phase.trim().toUpperCase()] ?? phase;
+}
+
+export function difficultyLabel(difficulty: string): string {
+  return (
+    difficultyOptions.find((option) => option.id === difficulty.trim().toLowerCase())
+      ?.label ?? difficulty
+  );
+}
+
 /** 只进 customRequirements 自由文本，不是独立接口字段。 */
 export const focusOptions = [
   { id: "project", label: "项目深挖" },

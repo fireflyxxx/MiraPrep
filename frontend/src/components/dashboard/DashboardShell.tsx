@@ -161,9 +161,41 @@ export default function DashboardShell({ children }: { children: React.ReactNode
         </div>
       </aside>
 
-      <main className="animate-mira-page-in mx-auto w-full max-w-[1000px] px-6 py-9 md:px-11">
+      <main className="animate-mira-page-in mx-auto w-full max-w-[1000px] px-5 pt-7 pb-28 sm:px-6 md:px-11 md:py-9">
         {children}
       </main>
+
+      <nav
+        aria-label="移动端主导航"
+        className="fixed right-3 bottom-3 left-3 z-40 grid grid-cols-4 gap-1 rounded-[16px] border border-border bg-surface/95 p-1.5 shadow-[0_18px_50px_-22px_rgba(0,0,0,0.45)] backdrop-blur md:hidden"
+      >
+        {navItems.map((item) => {
+          const active = pathname === item.href;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? "page" : undefined}
+              className={`mira-button rounded-[11px] px-2 py-2.5 text-center text-xs ${
+                active
+                  ? "bg-muted font-medium text-foreground"
+                  : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground"
+              }`}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+        {/* ponytail: 侧边栏在 <md 整个隐藏，退出登录是唯一必须保底的账号操作；
+            其余账号入口等 T-011 做移动端头部时再补。 */}
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="mira-button rounded-[11px] px-2 py-2.5 text-center text-xs text-muted-foreground hover:bg-surface-subtle hover:text-foreground"
+        >
+          退出
+        </button>
+      </nav>
     </div>
     </AuthGuard>
   );

@@ -52,7 +52,7 @@ export default function ResumeCard({
   return (
     <article
       onClick={() => { if (selectable) onSelect?.(resume.id); }}
-      className={`mira-button flex flex-wrap items-center gap-3.5 border-b border-muted px-5 py-4 last:border-b-0 hover:bg-surface-subtle ${mode === "setup" ? "rounded-xl border" : ""} ${mode === "setup" && selectable ? "cursor-pointer" : ""} ${mode === "setup" && !selectable ? "cursor-not-allowed opacity-60" : ""} ${selected ? "border-primary bg-primary-soft/40" : ""}`}
+      className={`mira-button flex flex-wrap items-center gap-3.5 px-5 py-4 hover:bg-surface-subtle ${mode === "setup" ? "rounded-xl border border-muted" : "border-b border-muted last:border-b-0"} ${mode === "setup" && selectable ? "cursor-pointer" : ""} ${mode === "setup" && !selectable ? "cursor-not-allowed opacity-60" : ""} ${selected ? "border-primary bg-primary-soft/40" : ""}`}
     >
       <span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[10px] bg-primary-soft font-display text-[10px] font-bold text-primary">
         {resume.fileName.toLowerCase().endsWith(".docx") ? "DOCX" : "PDF"}

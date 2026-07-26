@@ -19,6 +19,11 @@ public class InterviewAiRequestListener {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void startRuntime(InterviewRuntimeStartRequestedEvent event) {
+        aiServiceClient.startInterviewRuntime(event.request());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void requestGrading(InterviewGradingRequestedEvent event) {
         aiServiceClient.requestInterviewGrade(event.request());
     }
