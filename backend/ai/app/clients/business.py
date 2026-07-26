@@ -37,6 +37,24 @@ class BusinessCallbackClient:
                     await asyncio.sleep(self._backoff_seconds * (2 ** (attempt - 1)))
         return False
 
+    async def callback_json(self, path: str, json: dict[str, Any]) -> dict[str, Any] | None:
+        """同 callback，但把 Spring 的 `data` 返回给调用方（动态出题需要拿 questionId）。"""
+
+        url = f"{self._settings.business_callback_url.rstrip('/')}/{path.lstrip('/')}"
+        headers = {"X-Internal-Token": self._settings.internal_token.get_secret_value()}
+        for attempt in range(1, 4):
+            try:
+                response = await self._client.post(url, json=json, headers=headers)
+                response.raise_for_status()
+                body = response.json()
+                data = body.get("data") if isinstance(body, dict) else None
+                return data if isinstance(data, dict) else None
+            except (httpx.HTTPError, ValueError):
+                logger.warning("business callback failed", extra={"attempt": attempt, "url": url})
+                if attempt < 3:
+                    await asyncio.sleep(self._backoff_seconds * (2 ** (attempt - 1)))
+        return None
+
     async def aclose(self) -> None:
         if self._owns_client:
             await self._client.aclose()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -17,6 +18,7 @@ from langchain_core.messages import SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
 from langgraph.checkpoint.memory import MemorySaver
+from pydantic import ValidationError
 from redis.exceptions import RedisError
 
 from app.clients.business import BusinessCallbackClient
@@ -29,6 +31,7 @@ from app.prompts.interviewer import (
     build_decision_prompt,
     build_reply_prompt,
 )
+from app.prompts.next_question import build_user_prompt as build_next_question_prompt
 from app.schemas.interview import (
     AgentAction,
     AgentDecision,
@@ -41,6 +44,13 @@ from app.schemas.interview import (
     RuntimeInterviewPhase,
     RuntimeQuestion,
 )
+from app.schemas.outline import InterviewPhase
+from app.services.next_question import (
+    FALLBACK_QUESTIONS,
+    build_next_question_chain,
+    next_phase,
+)
+from app.services.outline import build_phase_budget
 from app.services.session_state import (
     RedisSessionStateStore,
     SessionAlreadyExistsError,
@@ -61,6 +71,10 @@ _LIVE_SCORING_PATTERN = re.compile(
 
 class MessageSink(Protocol):
     async def publish(self, session_id: int, message: dict[str, Any]) -> bool: ...
+
+
+class QuestionSink(Protocol):
+    async def append(self, session_id: int, question: dict[str, Any]) -> dict[str, Any] | None: ...
 
 
 class GradingTrigger(Protocol):
@@ -91,6 +105,18 @@ class BusinessMessageSink:
 
     async def aclose(self) -> None:
         await self._callback.aclose()
+
+
+class BusinessQuestionSink:
+    """动态出题后落库到 Spring，拿回 questionId 与 order。"""
+
+    def __init__(self, callback: BusinessCallbackClient) -> None:
+        self._callback = callback
+
+    async def append(self, session_id: int, question: dict[str, Any]) -> dict[str, Any] | None:
+        return await self._callback.callback_json(
+            path=f"/interviews/{session_id}/questions", json=question
+        )
 
 
 class BusinessGradingTrigger:
@@ -141,6 +167,7 @@ class InterviewAgentService:
         llm: Any,
         message_sink: MessageSink,
         grading_trigger: GradingTrigger,
+        question_sink: QuestionSink | None = None,
         clock: Callable[[], datetime] | None = None,
         checkpointer: Any | None = None,
     ) -> None:
@@ -148,6 +175,7 @@ class InterviewAgentService:
         self._llm = llm
         self._message_sink = message_sink
         self._grading_trigger = grading_trigger
+        self._question_sink = question_sink
         self._clock = clock or (lambda: datetime.now(UTC))
         self._checkpointer = checkpointer or MemorySaver()
         self._interview_graph = None
@@ -165,6 +193,8 @@ class InterviewAgentService:
                 durationMin=body.durationMin,
                 interviewerStyle=body.interviewerStyle,
                 accessTokenHash=self._hash_access_token(body.accessToken),
+                config=body.config,
+                resume=body.resume,
                 questions=sorted(body.questions, key=lambda question: question.order),
                 startedAt=now,
                 deadlineAt=now + timedelta(minutes=body.durationMin),
@@ -204,6 +234,7 @@ class InterviewAgentService:
                 raise QuestionMismatchError("answer questionId does not match active question")
 
             answer = body.content.strip()
+            active_prompt = self._active_interviewer_prompt(state, question)
             state.processedAnswerIds = (state.processedAnswerIds + [body.answerId])[-100:]
             await self._record_message(
                 state,
@@ -232,7 +263,12 @@ class InterviewAgentService:
                 )
                 return
 
-            turn = await self._run_decision_graph(state, question, answer)
+            turn = await self._run_decision_graph(
+                state,
+                question,
+                answer,
+                active_prompt=active_prompt,
+            )
             if turn.route == "terminate":
                 await self._emit_decision_reply(state, question, turn.decision)
                 await self._finish(state, "inappropriate_content")
@@ -256,7 +292,10 @@ class InterviewAgentService:
             if state.pendingFinishReason is not None:
                 await self._finish(state, state.pendingFinishReason)
                 return
-            closing_index = self._phase_index(state, "CLOSING")
+            closing_index = await self._ensure_phase_question(state, InterviewPhase.CLOSING)
+            if closing_index is None:
+                await self._finish(state, reason)
+                return
             await self._move_to_question(state, closing_index, finish_reason=reason)
             if state.status is not InterviewStatus.ENDED:
                 await self._finish(state, reason)
@@ -321,8 +360,17 @@ class InterviewAgentService:
             while True:
                 events = await self._store.wait_for_events(session_id, cursor, timeout=15.0)
                 if not events:
-                    if await self.enforce_deadline(session_id):
-                        continue
+                    try:
+                        if await self.enforce_deadline(session_id):
+                            continue
+                    except TimeoutError:
+                        # Answer generation owns the same session lock. A busy lock is
+                        # expected here and must not tear down an otherwise healthy SSE
+                        # connection while the next interviewer turn is being prepared.
+                        logger.debug(
+                            "interview heartbeat skipped deadline check while session is busy",
+                            extra={"session_id": session_id},
+                        )
                     state = await self._store.get(session_id)
                     if state.status is InterviewStatus.ENDED:
                         return
@@ -338,11 +386,16 @@ class InterviewAgentService:
             await self.aclose()
 
     async def _run_decision_graph(
-        self, state: InterviewSessionState, question: RuntimeQuestion, answer: str
+        self,
+        state: InterviewSessionState,
+        question: RuntimeQuestion,
+        answer: str,
+        *,
+        active_prompt: str | None = None,
     ) -> GraphTurnResult:
         decision_prompt = build_decision_prompt(
             answer=answer,
-            question=question.text,
+            question=active_prompt or question.text,
             focus_points=question.focusPoints,
             interviewer_style=state.interviewerStyle,
             follow_up_count=state.followUpCount,
@@ -399,6 +452,18 @@ class InterviewAgentService:
                 route="next_question",
                 follow_up_depth=0,
             )
+
+    @staticmethod
+    def _active_interviewer_prompt(
+        state: InterviewSessionState,
+        question: RuntimeQuestion,
+    ) -> str:
+        for message in reversed(state.history):
+            if message.role is ConversationRole.INTERVIEWER and str(message.questionId) == str(
+                question.questionId
+            ):
+                return message.content
+        return question.text
 
     async def _emit_decision_reply(
         self,
@@ -490,9 +555,101 @@ class InterviewAgentService:
         else:
             next_index = state.currentQuestionIndex + 1
         if next_index >= len(state.questions):
-            await self._finish(state, "completed")
-            return
+            phase = self._plan_next_phase(state)
+            if phase is None or await self._append_generated_question(state, phase) is None:
+                await self._finish(state, "completed")
+                return
         await self._move_to_question(state, next_index)
+
+    def _plan_next_phase(self, state: InterviewSessionState) -> InterviewPhase | None:
+        """按阶段预算决定下一题归属；超时被强推后不回头补前面欠的题。"""
+
+        budget = build_phase_budget(state.durationMin, state.config.types)
+        asked = Counter(question.phase for question in state.questions)
+        current = None
+        if state.phase.value != RuntimeInterviewPhase.GREETING.value:
+            current = InterviewPhase(state.phase.value)
+        return next_phase(budget, asked, current)
+
+    async def _ensure_phase_question(
+        self, state: InterviewSessionState, phase: InterviewPhase
+    ) -> int | None:
+        """返回该阶段题目的下标；动态出题下 CANDIDATE_QA/CLOSING 可能还没生成。"""
+
+        for index, question in enumerate(state.questions):
+            if question.phase is phase:
+                return index
+        question = await self._append_generated_question(state, phase)
+        return None if question is None else len(state.questions) - 1
+
+    async def _append_generated_question(
+        self, state: InterviewSessionState, phase: InterviewPhase
+    ) -> RuntimeQuestion | None:
+        """现场生成一道题，落库拿到 questionId 后追加到会话状态。"""
+
+        if self._question_sink is None:
+            logger.error(
+                "no question sink configured, cannot generate next question",
+                extra={"session_id": state.sessionId, "phase": phase.value},
+            )
+            return None
+
+        remaining = max(30, int((state.deadlineAt - self._clock()).total_seconds()) or 30)
+        prompt = build_next_question_prompt(
+            target_phase=phase.value,
+            config=state.config.model_dump(mode="json"),
+            resume=state.resume.parsedJson,
+            asked_questions=[question.text for question in state.questions],
+            history=[
+                {"role": message.role.value, "content": message.content}
+                for message in state.history[-8:]
+            ],
+            remaining_seconds=remaining,
+        )
+        try:
+            generated = await build_next_question_chain(self._llm).ainvoke(
+                {"interview_data": prompt}
+            )
+        except Exception:
+            # 一次出题失败不该终止面试，用该阶段的确定性兜底题继续。
+            logger.exception(
+                "next question generation failed, falling back",
+                extra={"session_id": state.sessionId, "phase": phase.value},
+            )
+            generated = FALLBACK_QUESTIONS[phase]
+
+        persisted = await self._question_sink.append(
+            state.sessionId,
+            {
+                "phase": phase.value,
+                "text": generated.text,
+                "focusPoints": generated.focusPoints,
+                "suggestedSeconds": generated.suggestedSeconds,
+            },
+        )
+        if persisted is None:
+            logger.error(
+                "next question could not be persisted",
+                extra={"session_id": state.sessionId, "phase": phase.value},
+            )
+            return None
+
+        try:
+            question = RuntimeQuestion(
+                questionId=persisted["questionId"],
+                phase=phase,
+                text=generated.text,
+                focusPoints=generated.focusPoints,
+                order=persisted["order"],
+            )
+        except ValidationError:
+            logger.warning(
+                "generated question rejected by runtime schema",
+                extra={"session_id": state.sessionId, "phase": phase.value},
+            )
+            return None
+        state.questions.append(question)
+        return question
 
     async def _move_to_question(
         self,
@@ -589,18 +746,22 @@ class InterviewAgentService:
             state.phase not in {RuntimeInterviewPhase.CANDIDATE_QA, RuntimeInterviewPhase.CLOSING}
             and now >= state.deadlineAt
         ):
-            await self._move_to_question(state, self._phase_index(state, "CANDIDATE_QA"))
+            index = await self._ensure_phase_question(state, InterviewPhase.CANDIDATE_QA)
+            if index is None:
+                await self._finish(state, "timeout")
+                return True
+            await self._move_to_question(state, index)
             return True
         if (
             state.phase is RuntimeInterviewPhase.CANDIDATE_QA
             and state.candidateQaDeadlineAt is not None
             and now >= state.candidateQaDeadlineAt
         ):
-            await self._move_to_question(
-                state,
-                self._phase_index(state, "CLOSING"),
-                finish_reason="timeout",
-            )
+            index = await self._ensure_phase_question(state, InterviewPhase.CLOSING)
+            if index is None:
+                await self._finish(state, "timeout")
+                return True
+            await self._move_to_question(state, index, finish_reason="timeout")
             return True
         return False
 
@@ -769,13 +930,6 @@ class InterviewAgentService:
         return 0
 
     @staticmethod
-    def _phase_index(state: InterviewSessionState, phase: str) -> int:
-        for index, question in enumerate(state.questions):
-            if question.phase.value == phase:
-                return index
-        raise RuntimeError(f"outline missing required phase {phase}")
-
-    @staticmethod
     def _hash_access_token(access_token: str) -> str:
         return hashlib.sha256(access_token.encode("utf-8")).hexdigest()
 
@@ -827,9 +981,12 @@ def build_interview_agent_service() -> InterviewAgentService:
     callback = BusinessCallbackClient(settings)
     return InterviewAgentService(
         store=RedisSessionStateStore(get_redis()),
-        llm=LlmClient(settings),
+        # 与 routers/internal.py 一致：thinking 模式不兼容 with_structured_output 的
+        # tool_choice，而且会把推理内容混进决策 JSON。
+        llm=LlmClient(settings, thinking={"type": "disabled"}),
         message_sink=BusinessMessageSink(callback),
         grading_trigger=BusinessGradingTrigger(callback),
+        question_sink=BusinessQuestionSink(callback),
         checkpointer=get_interview_checkpointer(),
     )
 
@@ -842,4 +999,5 @@ def build_interview_event_stream_service() -> InterviewAgentService:
         llm=None,
         message_sink=BusinessMessageSink(callback),
         grading_trigger=BusinessGradingTrigger(callback),
+        question_sink=BusinessQuestionSink(callback),
     )

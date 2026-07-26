@@ -9,7 +9,8 @@ import pytest
 from conftest import redis_client as _redis
 from redis.asyncio import Redis
 
-from app.services.grading import RedisGradingJobStore
+from app.schemas.grading import GradingRequest
+from app.services.grading import GradingTaskQueue, RedisGradingJobStore
 
 pytestmark = pytest.mark.usefixtures("require_redis")
 
@@ -157,6 +158,69 @@ async def test_redis_grading_store_moves_exhausted_delivery_to_dead_letter() -> 
 
         assert await redis.exists(store._job_key(session_id)) == 0
         assert await redis.llen(store._DEAD_LETTER_KEY) == 1
+    finally:
+        await _cleanup(redis, store, session_id)
+        await redis.aclose()
+
+
+@pytest.mark.asyncio
+async def test_enqueued_request_survives_lua_cjson_empty_array_round_trip() -> None:
+    """
+    入队脚本会把任务文档过一遍 Lua cjson，而 cjson 编码空表只能得到 {}。
+    请求以 JSON 字符串存放，所以没有追问的题目（followUps: []）也不会被改成 {}。
+    """
+
+    redis = _redis()
+    namespace = uuid4().hex
+    session_id = 9_500_000_000 + uuid4().int % 1_000_000_000
+    store = _isolated_store(redis, namespace)
+    queue = GradingTaskQueue(
+        store=store,
+        grading_service_factory=lambda: None,
+        callback_factory=lambda: None,
+    )
+    request = GradingRequest.model_validate(
+        {
+            "sessionId": session_id,
+            "config": {
+                "jobDirection": "backend",
+                "difficulty": "medium",
+                "types": ["technical"],
+                "durationMin": 15,
+                "interviewerStyle": "balanced",
+            },
+            "resume": {"parsedJson": {"skills": ["FastAPI"]}},
+            "partial": False,
+            "transcript": [
+                {
+                    "questionId": 1,
+                    "phase": "SELF_INTRO",
+                    "focusPoints": ["表达逻辑"],
+                    "question": "请自我介绍。",
+                    "answer": "我是后端工程师。",
+                    "followUps": [{"question": "具体做什么？", "answer": "做 Agent 编排。"}],
+                },
+                {
+                    "questionId": 2,
+                    "phase": "DOMAIN_ASSESSMENT",
+                    "focusPoints": ["专业知识"],
+                    "question": "谈谈幂等。",
+                    "answer": "用唯一约束。",
+                    "followUps": [],
+                },
+            ],
+        }
+    )
+
+    try:
+        assert await queue.enqueue(request)
+        claimed = await store.claim()
+        assert claimed is not None
+        _, job = claimed
+
+        restored = GradingRequest.model_validate(job["request"])
+        assert restored.transcript[1].followUps == []
+        assert restored.transcript[0].followUps[0]["question"] == "具体做什么？"
     finally:
         await _cleanup(redis, store, session_id)
         await redis.aclose()

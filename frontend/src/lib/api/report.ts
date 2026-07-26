@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "./client";
 import { endpoints } from "./endpoints";
+import { ApiError } from "./types";
 import type { DimensionScores, Grade } from "./stats";
 
 export interface ReportConfig {
@@ -18,8 +19,11 @@ export interface ReportConfig {
 }
 
 export interface FollowUpReview {
-  question?: string;
-  answer?: string;
+  question: string;
+  answer: string;
+  answerSeconds: number | null;
+  referenceAnswer: string;
+  suggestions: string[];
 }
 
 export interface ReportQuestion {
@@ -35,7 +39,7 @@ export interface ReportQuestion {
   suggestedSeconds: number | null;
   referenceAnswer: string | null;
   suggestions: string[];
-  followUpChain: unknown[];
+  followUpChain: FollowUpReview[];
   audioUrl: string | null;
 }
 
@@ -63,5 +67,15 @@ export function useReport(sessionId: string) {
     queryFn: () =>
       apiClient<InterviewReport>(endpoints.report(encodeURIComponent(sessionId))),
     enabled: sessionId.length > 0,
+    retry: (failureCount, error) => {
+      if (error instanceof ApiError && error.status === 404) {
+        return failureCount < 90;
+      }
+      return !(error instanceof ApiError) && failureCount < 2;
+    },
+    retryDelay: (attemptIndex, error) =>
+      error instanceof ApiError && error.status === 404
+        ? 2_000
+        : Math.min(1_000 * 2 ** attemptIndex, 10_000),
   });
 }

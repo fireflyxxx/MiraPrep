@@ -12,10 +12,11 @@ from langchain_core.runnables import RunnableLambda
 
 import app.main as main_module
 from app.main import app
-from app.prompts.grading import GRADING_SYSTEM_PROMPT, build_question_prompt
+from app.prompts.grading import GRADING_SYSTEM_PROMPT, SUMMARY_SYSTEM_PROMPT, build_question_prompt
 from app.routers.internal import get_grading_task_queue
 from app.schemas.grading import (
     DimensionScores,
+    FollowUpReview,
     GradingReport,
     GradingRequest,
     QuestionReview,
@@ -59,7 +60,13 @@ def _request_data(*, partial: bool = False, session_id: int = 105) -> dict[str, 
                 "focusPoints": ["专业知识", "表达逻辑"],
                 "question": "如何保证异步任务可靠执行？",
                 "answer": "用 Redis 保存任务状态，并对失败任务重试。",
-                "followUps": [{"question": "如何避免重复？", "answer": "使用稳定幂等键。"}],
+                "followUps": [
+                    {
+                        "question": "如何避免重复？",
+                        "answer": "使用稳定幂等键。",
+                        "answerSeconds": 18,
+                    }
+                ],
             },
             {
                 "questionId": 2,
@@ -80,7 +87,19 @@ def _question_review(question_id: int, score: int) -> QuestionReview:
         score=score,
         referenceAnswer=f"在 MiraPrep 项目中使用 Redis 可靠队列，题号 {question_id}。",
         suggestions=["先说目标，再说明设计与取舍。"],
-        followUpChain=[],
+        followUpChain=(
+            [
+                FollowUpReview(
+                    question="如何避免重复？",
+                    answer="使用稳定幂等键。",
+                    answerSeconds=18,
+                    referenceAnswer="使用业务幂等键、唯一约束和可重试状态机共同兜底。",
+                    suggestions=["说明幂等键的生成规则与冲突处理。"],
+                )
+            ]
+            if question_id == 1
+            else []
+        ),
     )
 
 
@@ -360,10 +379,141 @@ async def test_service_builds_complete_resume_specific_report_and_partial_branch
     assert report.grade == "A"
     assert len(report.questionReviews) == 2
     assert all("MiraPrep" in review.referenceAnswer for review in report.questionReviews)
+    follow_up = report.questionReviews[0].followUpChain[0]
+    assert follow_up.question == "如何避免重复？"
+    assert follow_up.answer == "使用稳定幂等键。"
+    assert follow_up.answerSeconds == 18
+    assert "唯一约束" in follow_up.referenceAnswer
+    assert follow_up.suggestions == ["说明幂等键的生成规则与冲突处理。"]
     assert len(llm.question_prompts) == 2
     assert len(llm.summary_prompts) == 1
     await service.aclose()
     assert llm.closed is True
+
+
+@pytest.mark.asyncio
+async def test_service_retries_only_summary_when_structured_output_is_temporarily_empty() -> None:
+    class EmptySummaryOnceLlm(RecordingLlm):
+        def __init__(self) -> None:
+            super().__init__()
+            self.summary_attempts = 0
+
+        def with_structured_output(self, schema):  # type: ignore[no-untyped-def]
+            chain = super().with_structured_output(schema)
+            if schema is not SummaryReview:
+                return chain
+
+            async def summarize(prompt_value):  # type: ignore[no-untyped-def]
+                self.summary_attempts += 1
+                if self.summary_attempts == 1:
+                    return SummaryReview.model_validate({})
+                return await chain.ainvoke(prompt_value)
+
+            return RunnableLambda(summarize)
+
+    request = GradingRequest.model_validate(_request_data())
+    llm = EmptySummaryOnceLlm()
+
+    report = await GradingService(llm).grade(request)
+
+    assert report.grade == "A"
+    assert llm.summary_attempts == 2
+    assert len(llm.question_prompts) == 2
+
+
+@pytest.mark.asyncio
+async def test_service_retries_only_question_when_structured_output_is_temporarily_empty() -> None:
+    class EmptyQuestionOnceLlm(RecordingLlm):
+        def __init__(self) -> None:
+            super().__init__()
+            self.question_attempts = 0
+
+        def with_structured_output(self, schema):  # type: ignore[no-untyped-def]
+            chain = super().with_structured_output(schema)
+            if schema is not QuestionReview:
+                return chain
+
+            async def review(prompt_value):  # type: ignore[no-untyped-def]
+                self.question_attempts += 1
+                if self.question_attempts == 1:
+                    return QuestionReview.model_validate({})
+                return await chain.ainvoke(prompt_value)
+
+            return RunnableLambda(review)
+
+    request = GradingRequest.model_validate(_request_data())
+    llm = EmptyQuestionOnceLlm()
+
+    report = await GradingService(llm).grade(request)
+
+    assert report.grade == "A"
+    assert llm.question_attempts == 3
+    assert len(llm.question_prompts) == 2
+
+
+@pytest.mark.asyncio
+async def test_service_falls_back_to_plain_json_when_provider_returns_empty_tool_args() -> None:
+    class EmptyToolArgsLlm:
+        def __init__(self) -> None:
+            self.plain_calls = 0
+
+        def with_structured_output(self, schema):  # type: ignore[no-untyped-def]
+            async def empty_tool_args(prompt_value):  # type: ignore[no-untyped-def]
+                return schema.model_validate({})
+
+            return RunnableLambda(empty_tool_args)
+
+        async def complete(
+            self,
+            messages: list[dict[str, Any]],
+            *,
+            system: str | None = None,
+        ) -> str:
+            self.plain_calls += 1
+            if system == SUMMARY_SYSTEM_PROMPT:
+                return json.dumps(
+                    {
+                        "summary": "整体表现稳定",
+                        "highlights": ["项目细节充分"],
+                        "weaknesses": ["可进一步量化结果"],
+                    },
+                    ensure_ascii=False,
+                )
+            prompt = messages[0]["content"]
+            question_id = 1 if '"questionId": 1' in prompt else 2
+            follow_up_chain = (
+                [
+                    {
+                        "question": "如何避免重复？",
+                        "answer": "使用稳定幂等键。",
+                        "answerSeconds": 18,
+                        "referenceAnswer": "使用幂等键和唯一约束。",
+                        "suggestions": ["说明冲突处理。"],
+                    }
+                ]
+                if question_id == 1
+                else []
+            )
+            return json.dumps(
+                {
+                    "questionId": question_id,
+                    "score": 8,
+                    "referenceAnswer": "结合真实项目说明方案、权衡与结果。",
+                    "suggestions": ["补充量化指标"],
+                    "followUpChain": follow_up_chain,
+                },
+                ensure_ascii=False,
+            )
+
+        async def aclose(self) -> None:
+            pass
+
+    llm = EmptyToolArgsLlm()
+    report = await GradingService(llm).grade(GradingRequest.model_validate(_request_data()))
+
+    assert report.totalScore == 80
+    assert {review.questionId for review in report.questionReviews} == {1, 2}
+    assert llm.plain_calls == 3
 
 
 @pytest.mark.asyncio

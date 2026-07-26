@@ -497,7 +497,13 @@ class ReportStatsApiIntegrationTest {
                     "score":8,
                     "referenceAnswer":"可结合 MiraPrep 项目说明事务与行锁。",
                     "suggestions":["先说明风险，再说明方案"],
-                    "followUpChain":[{"question":"如果并发到达呢？","answer":"使用行锁串行化"}]
+                    "followUpChain":[{
+                      "question":"如果并发到达呢？",
+                      "answer":"使用行锁串行化",
+                      "answerSeconds":27,
+                      "referenceAnswer":"使用行锁配合唯一约束。",
+                      "suggestions":["说明事务边界"]
+                    }]
                   }]
                 }
                 """.formatted(grade, score, partial, questionId);

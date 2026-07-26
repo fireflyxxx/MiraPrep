@@ -10,6 +10,7 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -35,5 +36,12 @@ public record GradeResultRequest(
             @NotNull @DecimalMin("0") @DecimalMax("10") BigDecimal score,
             @NotBlank String referenceAnswer,
             @NotEmpty List<@NotBlank String> suggestions,
-            @NotNull List<Object> followUpChain) {}
+            @NotNull List<@Valid FollowUpReviewResult> followUpChain) {}
+
+    public record FollowUpReviewResult(
+            @NotBlank String question,
+            @NotBlank String answer,
+            @PositiveOrZero Integer answerSeconds,
+            @NotBlank String referenceAnswer,
+            @NotEmpty List<@NotBlank String> suggestions) {}
 }

@@ -30,6 +30,14 @@ async def test_redis_store_persists_state_and_assigns_atomic_event_sequences() -
             durationMin=15,
             interviewerStyle="professional",
             accessTokenHash="a" * 64,
+            config={
+                "jobDirection": "backend",
+                "difficulty": "medium",
+                "types": ["technical"],
+                "durationMin": 15,
+                "interviewerStyle": "professional",
+            },
+            resume={"parsedJson": {"skills": ["FastAPI"]}},
             questions=[
                 {
                     "questionId": "q1",
@@ -44,7 +52,8 @@ async def test_redis_store_persists_state_and_assigns_atomic_event_sequences() -
         )
 
         await store.create(state)
-        assert await store.session_ids() == [session_id]
+        # 开发机 Redis 是共享的，真实面试在跑时会有别的 session，只断言自己在册。
+        assert session_id in await store.session_ids()
         events = await asyncio.gather(
             *(store.append_event(session_id, "token", {"text": str(index)}) for index in range(20))
         )
@@ -67,7 +76,8 @@ async def test_redis_store_persists_state_and_assigns_atomic_event_sequences() -
         assert terminal.seq == 22
         assert terminal.type == "interview_end"
         assert (await store.get(session_id)).status == "ENDED"
-        assert await store.session_ids() == []
+        # 结束后本会话必须从维护集合里摘掉；同上，不假设 Redis 里没有别人。
+        assert session_id not in await store.session_ids()
     finally:
         await redis.delete(*RedisSessionStateStore._keys(session_id))
         await redis.srem("miraprep:interview:active", session_id)
@@ -106,6 +116,14 @@ async def test_redis_store_reports_replay_gap_after_old_events_are_trimmed() -> 
             durationMin=15,
             interviewerStyle="professional",
             accessTokenHash="a" * 64,
+            config={
+                "jobDirection": "backend",
+                "difficulty": "medium",
+                "types": ["technical"],
+                "durationMin": 15,
+                "interviewerStyle": "professional",
+            },
+            resume={"parsedJson": {"skills": ["FastAPI"]}},
             questions=[
                 {
                     "questionId": "q1",

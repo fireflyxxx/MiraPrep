@@ -39,10 +39,23 @@ function formatDuration(seconds: number | null) {
 function toFollowUp(value: unknown): FollowUpReview | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
-  if (typeof item.question !== "string" && typeof item.answer !== "string") return null;
+  if (
+    typeof item.question !== "string" ||
+    typeof item.answer !== "string"
+  ) {
+    return null;
+  }
   return {
-    question: typeof item.question === "string" ? item.question : undefined,
-    answer: typeof item.answer === "string" ? item.answer : undefined,
+    question: item.question,
+    answer: item.answer,
+    answerSeconds: typeof item.answerSeconds === "number" ? item.answerSeconds : null,
+    referenceAnswer:
+      typeof item.referenceAnswer === "string"
+        ? item.referenceAnswer
+        : "该历史追问暂无参考答案",
+    suggestions: (Array.isArray(item.suggestions) ? item.suggestions : []).filter(
+      (suggestion): suggestion is string => typeof suggestion === "string",
+    ),
   };
 }
 
@@ -321,7 +334,7 @@ function QuestionReview({ question }: { question: ReportQuestion }) {
             {qualitative} {score === null ? "" : `${score}/10`}
           </div>
           <div className="mt-1 text-[11.5px] text-muted-foreground">
-            用时 {formatDuration(actualSeconds)}
+            {question.answer === null ? "未作答" : `用时 ${formatDuration(actualSeconds)}`}
           </div>
           {overtime > 0 ? (
             <div className="mt-1 text-[11.5px] font-medium text-grade-a">
@@ -340,8 +353,9 @@ function QuestionReview({ question }: { question: ReportQuestion }) {
         </div>
         <div className="mt-2 flex flex-wrap justify-between gap-2 text-[11.5px] text-muted-foreground">
           <span>
-            思考 {formatDuration(question.thinkSeconds)} · 回答{" "}
-            {formatDuration(question.answerSeconds)}
+            {question.answer === null
+              ? "本题未作答"
+              : `本题作答 ${formatDuration(actualSeconds)}`}
           </span>
           <span>建议 {formatDuration(question.suggestedSeconds)}</span>
         </div>
@@ -370,16 +384,32 @@ function QuestionReview({ question }: { question: ReportQuestion }) {
       {followUps.length ? (
         <div className="border-t border-muted px-5 py-4 sm:px-[22px]">
           <h3 className="mb-3 text-xs font-medium text-muted-foreground">追问链</h3>
-          <ol className="ml-2 border-l-2 border-primary/20 pl-4">
+          <ol className="space-y-3">
             {followUps.map((item, index) => (
-              <li key={`${item.question}-${index}`} className="relative mb-3 last:mb-0">
-                <span className="absolute top-1.5 -left-[21px] h-2 w-2 rounded-full bg-primary" />
-                {item.question ? (
-                  <p className="text-[13px] font-medium">{item.question}</p>
-                ) : null}
-                {item.answer ? (
-                  <p className="mt-1 text-[13px] text-muted-foreground">{item.answer}</p>
-                ) : null}
+              <li
+                key={`${item.question}-${index}`}
+                className="rounded-xl border border-primary/15 bg-primary-soft/35 p-4"
+              >
+                <div className="mb-2 flex items-start justify-between gap-3">
+                  <p className="text-[13px] font-medium">
+                    追问 {index + 1} · {item.question}
+                  </p>
+                  <span className="shrink-0 text-[11.5px] text-muted-foreground">
+                    追问用时 {formatDuration(item.answerSeconds)}
+                  </span>
+                </div>
+                <p className="text-[13px] leading-relaxed text-muted-foreground">
+                  <strong className="font-medium text-foreground">你的回答：</strong>
+                  {item.answer}
+                </p>
+                <p className="mt-2 text-[13px] leading-relaxed">
+                  <strong className="font-medium text-primary">参考答案：</strong>
+                  {item.referenceAnswer}
+                </p>
+                <p className="mt-2 text-[13px] leading-relaxed">
+                  <strong className="font-medium">本条建议：</strong>
+                  {item.suggestions.join("；")}
+                </p>
               </li>
             ))}
           </ol>

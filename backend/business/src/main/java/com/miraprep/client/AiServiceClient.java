@@ -58,6 +58,21 @@ public class AiServiceClient {
         }
     }
 
+    /** 大纲就绪后把会话令牌与出题上下文交接给运行时（T-040 §传输选择）。 */
+    @Async("resumeParseExecutor")
+    public void startInterviewRuntime(InterviewStartRequest request) {
+        try {
+            restClient.post()
+                    .uri("/internal/interviews/{sessionId}/start", request.sessionId())
+                    .header("X-Internal-Token", internalToken)
+                    .body(request)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (Exception exception) {
+            LOGGER.error("Failed to start runtime for interview {}", request.sessionId(), exception);
+        }
+    }
+
     @Async("resumeParseExecutor")
     public void requestInterviewGrade(InterviewGradeRequest request) {
         try {
@@ -88,6 +103,22 @@ public class AiServiceClient {
             String interviewerStyle) {}
 
     public record InterviewOutlineResume(Map<String, Object> parsedJson) {}
+
+    /**
+     * 运行时启动载荷。`config` 与 `resume` 让 AI 侧能在面试过程中动态出题，
+     * 因此这里只带已经定稿的开场题，其余题目由运行时按阶段预算现场生成。
+     */
+    public record InterviewStartRequest(
+            Long sessionId,
+            String accessToken,
+            int durationMin,
+            String interviewerStyle,
+            InterviewOutlineConfig config,
+            InterviewOutlineResume resume,
+            List<InterviewStartQuestion> questions) {}
+
+    public record InterviewStartQuestion(
+            Long questionId, String phase, String text, List<String> focusPoints, int order) {}
 
     public record InterviewGradeRequest(
             Long sessionId,

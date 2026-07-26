@@ -1,5 +1,6 @@
 package com.miraprep.interview;
 
+import com.miraprep.auth.AuthTokenStore;
 import com.miraprep.client.AiServiceClient;
 import com.miraprep.common.error.ErrorCode;
 import com.miraprep.common.exception.BusinessException;
@@ -14,6 +15,8 @@ import com.miraprep.domain.MessageRole;
 import com.miraprep.domain.OutlineStatus;
 import com.miraprep.domain.Question;
 import com.miraprep.domain.Resume;
+import com.miraprep.interview.dto.AppendQuestionRequest;
+import com.miraprep.interview.dto.AppendQuestionResponse;
 import com.miraprep.interview.dto.CreateInterviewRequest;
 import com.miraprep.interview.dto.CreateInterviewResponse;
 import com.miraprep.interview.dto.EndInterviewRequest;
@@ -26,9 +29,11 @@ import com.miraprep.interview.dto.OutlineQuestionRequest;
 import com.miraprep.interview.dto.RuntimeGradingRequest;
 import com.miraprep.resume.ResumeRepository;
 import com.miraprep.report.ReportRepository;
+import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -48,12 +53,16 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class InterviewService {
     private static final Logger LOGGER = LoggerFactory.getLogger(InterviewService.class);
+    /** 面试可能比设定时长拖一会儿（迟到进入、追问），令牌多留一小时。 */
+    private static final Duration RUNTIME_TOKEN_SLACK = Duration.ofHours(1);
+    private static final SecureRandom RUNTIME_TOKEN_RANDOM = new SecureRandom();
     private final InterviewSessionRepository interviewSessionRepository;
     private final QuestionRepository questionRepository;
     private final InterviewMessageRepository interviewMessageRepository;
     private final ResumeRepository resumeRepository;
     private final ReportRepository reportRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final AuthTokenStore runtimeTokenStore;
 
     public InterviewService(
             InterviewSessionRepository interviewSessionRepository,
@@ -61,13 +70,15 @@ public class InterviewService {
             InterviewMessageRepository interviewMessageRepository,
             ResumeRepository resumeRepository,
             ReportRepository reportRepository,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            AuthTokenStore runtimeTokenStore) {
         this.interviewSessionRepository = interviewSessionRepository;
         this.questionRepository = questionRepository;
         this.interviewMessageRepository = interviewMessageRepository;
         this.resumeRepository = resumeRepository;
         this.reportRepository = reportRepository;
         this.eventPublisher = eventPublisher;
+        this.runtimeTokenStore = runtimeTokenStore;
     }
 
     @Transactional
@@ -109,7 +120,25 @@ public class InterviewService {
                 new AiServiceClient.InterviewOutlineResume(
                         resume.getParsedJson() == null ? Map.of() : resume.getParsedJson()));
         eventPublisher.publishEvent(new InterviewOutlineRequestedEvent(outlineRequest));
-        return new CreateInterviewResponse(saved.getId(), lower(saved.getOutlineStatus()));
+
+        // 令牌在创建时就铸好交给前端，大纲就绪后才交接给运行时，两边必须是同一个值。
+        String runtimeToken = newRuntimeToken();
+        runtimeTokenStore.put(
+                runtimeTokenKey(saved.getId()),
+                runtimeToken,
+                Duration.ofMinutes(saved.getDurationMin()).plus(RUNTIME_TOKEN_SLACK));
+        return new CreateInterviewResponse(
+                saved.getId(), lower(saved.getOutlineStatus()), runtimeToken);
+    }
+
+    private static String runtimeTokenKey(Long sessionId) {
+        return "interview:runtime-token:" + sessionId;
+    }
+
+    private static String newRuntimeToken() {
+        byte[] material = new byte[32];
+        RUNTIME_TOKEN_RANDOM.nextBytes(material);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(material);
     }
 
     @Transactional(readOnly = true)
@@ -144,6 +173,7 @@ public class InterviewService {
 
         session.setStatus(targetStatus);
         session.setEndedAt(Instant.now());
+        runtimeTokenStore.delete(runtimeTokenKey(session.getId()));
         scheduleGrading(session);
         return endResponse(session);
     }
@@ -237,8 +267,79 @@ public class InterviewService {
             session.setOutlineStatus(OutlineStatus.FAILED);
             return;
         }
-        questionRepository.saveAll(questions);
+        List<Question> saved = questionRepository.saveAll(questions);
         session.setOutlineStatus(OutlineStatus.READY);
+        publishRuntimeStart(session, saved);
+    }
+
+    /**
+     * 把创建时铸好的会话令牌与出题上下文交接给运行时。令牌缺失（过期或服务重启前创建）
+     * 时只记日志：会话仍是 READY，用户重新创建一场即可，不该让回调失败。
+     */
+    private void publishRuntimeStart(InterviewSession session, List<Question> questions) {
+        String runtimeToken = runtimeTokenStore.get(runtimeTokenKey(session.getId()));
+        if (runtimeToken == null) {
+            LOGGER.warn(
+                    "Runtime token missing for interview {}, skipping runtime handoff",
+                    session.getId());
+            return;
+        }
+        Resume resume = session.getResume();
+        List<AiServiceClient.InterviewStartQuestion> startQuestions = questions.stream()
+                .sorted(Comparator.comparing(Question::getSortOrder))
+                .map(question -> new AiServiceClient.InterviewStartQuestion(
+                        question.getId(),
+                        question.getPhase().name(),
+                        question.getText(),
+                        question.getFocusPoints() == null ? List.of() : question.getFocusPoints(),
+                        question.getSortOrder()))
+                .toList();
+        eventPublisher.publishEvent(new InterviewRuntimeStartRequestedEvent(
+                new AiServiceClient.InterviewStartRequest(
+                        session.getId(),
+                        runtimeToken,
+                        session.getDurationMin(),
+                        lower(session.getInterviewerStyle()),
+                        new AiServiceClient.InterviewOutlineConfig(
+                                session.getJobDirection(),
+                                session.getJobTitle(),
+                                session.getJdText(),
+                                lower(session.getDifficulty()),
+                                session.getTypes(),
+                                session.getDurationMin(),
+                                session.getCustomRequirements(),
+                                lower(session.getInterviewerStyle())),
+                        new AiServiceClient.InterviewOutlineResume(
+                                resume == null || resume.getParsedJson() == null
+                                        ? Map.of()
+                                        : resume.getParsedJson()),
+                        startQuestions)));
+    }
+
+    /** 运行时现场出题后落库，返回 questionId 供消息与批改引用。 */
+    @Transactional
+    public AppendQuestionResponse appendQuestion(Long sessionId, AppendQuestionRequest request) {
+        InterviewSession session = interviewSessionRepository.findByIdForUpdate(sessionId)
+                .filter(candidate -> !candidate.isDeleted())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+        if (session.getStatus() == InterviewStatus.COMPLETED
+                || session.getStatus() == InterviewStatus.ABORTED) {
+            throw new BusinessException(ErrorCode.INVALID_PARAM);
+        }
+        InterviewPhase phase = enumValue(InterviewPhase.class, request.phase());
+        if (phase == InterviewPhase.GREETING) {
+            throw new BusinessException(ErrorCode.INVALID_PARAM);
+        }
+
+        Question question = new Question();
+        question.setSession(session);
+        question.setPhase(phase);
+        question.setText(request.text().trim());
+        question.setFocusPoints(List.copyOf(request.focusPoints()));
+        question.setSortOrder((int) questionRepository.countBySessionId(sessionId) + 1);
+        question.setSuggestedSeconds(request.suggestedSeconds());
+        Question saved = questionRepository.save(question);
+        return new AppendQuestionResponse(saved.getId(), saved.getSortOrder());
     }
 
     private Question toQuestion(InterviewSession session, OutlineQuestionRequest request) {
@@ -303,6 +404,13 @@ public class InterviewService {
             if (primaryAnswer == null) {
                 continue;
             }
+            InterviewMessage primaryQuestion = messages.stream()
+                    .filter(message -> message.getRole() == MessageRole.INTERVIEWER)
+                    .filter(message -> message.getSeq() < primaryAnswer.getSeq())
+                    .max(java.util.Comparator.comparingInt(InterviewMessage::getSeq))
+                    .orElse(null);
+            question.setThinkSeconds(0);
+            question.setAnswerSeconds(elapsedSeconds(primaryQuestion, primaryAnswer));
             transcript.add(new AiServiceClient.InterviewGradeTranscriptQuestion(
                     question.getId(),
                     lower(question.getPhase()),
@@ -311,6 +419,7 @@ public class InterviewService {
                     primaryAnswer.getContent(),
                     followUps(messages, primaryAnswer.getSeq())));
         }
+        questionRepository.saveAll(questions);
 
         Resume resume = session.getResume();
         Map<String, Object> parsedResume =
@@ -355,10 +464,22 @@ public class InterviewService {
             Map<String, Object> pair = new LinkedHashMap<>();
             pair.put("question", interviewer.getContent());
             pair.put("answer", answer.getContent());
+            pair.put("answerSeconds", elapsedSeconds(interviewer, answer));
             followUps.add(pair);
             lastAnswerSeq = answer.getSeq();
         }
         return List.copyOf(followUps);
+    }
+
+    private int elapsedSeconds(InterviewMessage question, InterviewMessage answer) {
+        if (question == null
+                || question.getCreatedAt() == null
+                || answer.getCreatedAt() == null
+                || answer.getCreatedAt().isBefore(question.getCreatedAt())) {
+            return 0;
+        }
+        long seconds = Duration.between(question.getCreatedAt(), answer.getCreatedAt()).getSeconds();
+        return (int) Math.min(seconds, Integer.MAX_VALUE);
     }
 
     private InterviewListItemResponse listItem(

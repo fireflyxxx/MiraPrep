@@ -35,6 +35,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -49,6 +50,7 @@ class InterviewApiIntegrationTest {
     @Autowired private InterviewSessionRepository interviewSessionRepository;
     @Autowired private QuestionRepository questionRepository;
     @Autowired private ResumeRepository resumeRepository;
+    @Autowired private JdbcTemplate jdbcTemplate;
 
     @MockBean private ObjectStorageService objectStorageService;
     @MockBean private AiServiceClient aiServiceClient;
@@ -204,6 +206,101 @@ class InterviewApiIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("created"))
                 .andExpect(jsonPath("$.data.outlineStatus").value("ready"))
                 .andExpect(jsonPath("$.data.questionCount").value(2));
+    }
+
+    @Test
+    void createMintsRuntimeTokenAndOutlineReadyHandsItToTheRuntime() throws Exception {
+        String token = registerAndGetAccessToken();
+        long resumeId = uploadResume(token, "runtime-handoff.pdf");
+        var resume = resumeRepository.findById(resumeId).orElseThrow();
+        resume.setParsedJson(Map.of("skills", List.of("Java", "Spring")));
+        resumeRepository.save(resume);
+        MvcResult created = mockMvc.perform(post("/api/v1/interviews")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content(createBody(resumeId)))
+                .andExpect(status().isOk())
+                .andReturn();
+        String createdBody = created.getResponse().getContentAsString();
+        long sessionId = ((Number) JsonPath.read(createdBody, "$.data.sessionId")).longValue();
+        String runtimeToken = JsonPath.read(createdBody, "$.data.runtimeToken");
+        org.assertj.core.api.Assertions.assertThat(runtimeToken.length())
+                .isGreaterThanOrEqualTo(32);
+
+        postOutlineCallback(sessionId, """
+                {
+                  "status": "ready",
+                  "questions": [
+                    {"phase":"self_intro","text":"请做个自我介绍","focusPoints":["表达"],"order":1,"suggestedSeconds":90}
+                  ]
+                }
+                """)
+                .andExpect(status().isOk());
+
+        var captor = org.mockito.ArgumentCaptor.forClass(AiServiceClient.InterviewStartRequest.class);
+        verify(aiServiceClient, times(1)).startInterviewRuntime(captor.capture());
+        AiServiceClient.InterviewStartRequest start = captor.getValue();
+        // 前端拿到的令牌必须和交接给运行时的是同一个，否则 SSE 一定 401。
+        org.assertj.core.api.Assertions.assertThat(start.accessToken()).isEqualTo(runtimeToken);
+        org.assertj.core.api.Assertions.assertThat(start.sessionId()).isEqualTo(sessionId);
+        org.assertj.core.api.Assertions.assertThat(start.questions()).hasSize(1);
+        org.assertj.core.api.Assertions.assertThat(start.questions().get(0).phase())
+                .isEqualTo("SELF_INTRO");
+        // 动态出题要靠这两段上下文，缺了运行时就只能问兜底题。
+        org.assertj.core.api.Assertions.assertThat(start.config().jobTitle())
+                .isEqualTo("Java engineer");
+        org.assertj.core.api.Assertions.assertThat(start.resume().parsedJson())
+                .containsEntry("skills", List.of("Java", "Spring"));
+    }
+
+    @Test
+    void runtimeAppendsDynamicQuestionsWithContiguousOrder() throws Exception {
+        String token = registerAndGetAccessToken();
+        long sessionId = createInterview(token, uploadResume(token, "dynamic.pdf"));
+        postOutlineCallback(sessionId, """
+                {
+                  "status": "ready",
+                  "questions": [
+                    {"phase":"self_intro","text":"请做个自我介绍","focusPoints":["表达"],"order":1,"suggestedSeconds":90}
+                  ]
+                }
+                """)
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/internal/interviews/{id}/questions", sessionId)
+                        .header("X-Internal-Token", "test-internal-token")
+                        .contentType("application/json")
+                        .content("""
+                                {"phase":"resume_deep_dive","text":"讲讲你的 Spring 项目","focusPoints":["项目深度"],"suggestedSeconds":150}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.questionId").isNumber())
+                .andExpect(jsonPath("$.data.order").value(2));
+
+        mockMvc.perform(get("/api/v1/interviews/{id}/status", sessionId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.questionCount").value(2));
+    }
+
+    @Test
+    void runtimeCannotAppendQuestionsToAFinishedInterview() throws Exception {
+        String token = registerAndGetAccessToken();
+        long sessionId = createInterview(token, uploadResume(token, "finished.pdf"));
+        mockMvc.perform(post("/api/v1/interviews/{id}/end", sessionId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content("{\"reason\":\"manual\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/internal/interviews/{id}/questions", sessionId)
+                        .header("X-Internal-Token", "test-internal-token")
+                        .contentType("application/json")
+                        .content("""
+                                {"phase":"closing","text":"收尾","focusPoints":["收尾"],"suggestedSeconds":60}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40000));
     }
 
     @Test
@@ -424,6 +521,26 @@ class InterviewApiIntegrationTest {
         postMessage(sessionId, question.getId(), "candidate", "使用行锁。", 2);
         postMessage(sessionId, question.getId(), "interviewer", "如果并发到达呢？", 3);
         postMessage(sessionId, question.getId(), "candidate", "再用唯一约束兜底。", 4);
+        jdbcTemplate.update(
+                "update interview_message set created_at = ? where session_id = ? and seq = ?",
+                java.sql.Timestamp.from(Instant.parse("2026-07-26T01:00:00Z")),
+                sessionId,
+                1);
+        jdbcTemplate.update(
+                "update interview_message set created_at = ? where session_id = ? and seq = ?",
+                java.sql.Timestamp.from(Instant.parse("2026-07-26T01:00:42Z")),
+                sessionId,
+                2);
+        jdbcTemplate.update(
+                "update interview_message set created_at = ? where session_id = ? and seq = ?",
+                java.sql.Timestamp.from(Instant.parse("2026-07-26T01:01:00Z")),
+                sessionId,
+                3);
+        jdbcTemplate.update(
+                "update interview_message set created_at = ? where session_id = ? and seq = ?",
+                java.sql.Timestamp.from(Instant.parse("2026-07-26T01:01:27Z")),
+                sessionId,
+                4);
 
         String body = "{\"reason\":\"manual\"}";
         mockMvc.perform(post("/api/v1/interviews/{id}/end", sessionId)
@@ -466,7 +583,11 @@ class InterviewApiIntegrationTest {
         org.assertj.core.api.Assertions.assertThat(gradingRequest.transcript().get(0).followUps())
                 .containsExactly(Map.of(
                         "question", "如果并发到达呢？",
-                        "answer", "再用唯一约束兜底。"));
+                        "answer", "再用唯一约束兜底。",
+                        "answerSeconds", 27));
+        org.assertj.core.api.Assertions.assertThat(
+                        questionRepository.findById(question.getId()).orElseThrow().getAnswerSeconds())
+                .isEqualTo(42);
         InterviewSession persisted = interviewSessionRepository.findById(sessionId).orElseThrow();
         org.assertj.core.api.Assertions.assertThat(persisted.getGradingStatus()).isEqualTo(GradingStatus.PENDING);
         org.assertj.core.api.Assertions.assertThat(persisted.getEndedAt()).isNotNull();

@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { InterviewReport } from "@/lib/api/report";
 import ReportClient from "./ReportClient";
 
 const overview = vi.hoisted(() => ({
@@ -26,7 +27,7 @@ vi.mock("@/lib/api/stats", async (importOriginal) => {
   };
 });
 
-const report = {
+const report: InterviewReport = {
   sessionId: 108,
   grade: "A",
   totalScore: 82,
@@ -69,7 +70,13 @@ const report = {
       referenceAnswer: "区分 staleTime 与 gcTime，并按数据变化频率设置。",
       suggestions: ["补充缓存失效时机"],
       followUpChain: [
-        { question: "什么时候主动失效？", answer: "mutation 成功以后。" },
+        {
+          question: "什么时候主动失效？",
+          answer: "mutation 成功以后。",
+          answerSeconds: 18,
+          referenceAnswer: "在 mutation 成功后按 queryKey 精确失效。",
+          suggestions: ["补充乐观更新失败时的回滚策略"],
+        },
       ],
       audioUrl: null,
     },
@@ -138,7 +145,10 @@ describe("ReportClient", () => {
     expect(screen.getByLabelText("五维能力雷达图")).toHaveTextContent("本次");
     expect(screen.getByLabelText("五维能力雷达图")).toHaveTextContent("历史均值");
     expect(screen.getByText("超出建议 20 秒")).toBeInTheDocument();
-    expect(screen.getByText("什么时候主动失效？")).toBeInTheDocument();
+    expect(screen.getByText(/什么时候主动失效？/)).toBeInTheDocument();
+    expect(screen.getByText("追问用时 18 秒")).toBeInTheDocument();
+    expect(screen.getByText("在 mutation 成功后按 queryKey 精确失效。")).toBeInTheDocument();
+    expect(screen.getByText("补充乐观更新失败时的回滚策略")).toBeInTheDocument();
     expect(screen.getByText("补充缓存失效时机")).toBeInTheDocument();
 
     expect(screen.queryByText("项目追问 4")).not.toBeInTheDocument();
@@ -191,5 +201,28 @@ describe("ReportClient", () => {
       ),
     ).toHaveLength(0);
     consoleError.mockRestore();
+  });
+
+  it("labels unanswered questions explicitly instead of claiming their time was lost", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      response({
+        ...report,
+        questions: [
+          {
+            ...report.questions[0],
+            answer: null,
+            thinkSeconds: null,
+            answerSeconds: null,
+          },
+        ],
+      }),
+    );
+
+    renderReport();
+    await screen.findByText("请说明 React Query 的缓存策略。");
+
+    expect(screen.getAllByText("未作答")).not.toHaveLength(0);
+    expect(screen.getByText("本题未作答")).toBeInTheDocument();
+    expect(screen.queryByText(/用时 未记录/)).not.toBeInTheDocument();
   });
 });

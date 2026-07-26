@@ -50,3 +50,12 @@
 PR 贴：创建→轮询 ready→结束 全链路 curl、DB 会话与题目记录、非本人 403。
 
 ## 遗留/发现
+- **补实施（2026-07-26）：运行时令牌交接**。此前 `POST /interviews` 不返回 `runtimeToken`，
+  Spring 也从未调用 T-040 约定的 `POST /internal/interviews/{id}/start`，导致运行时链路完全没被
+  激活，前端一进面试页就是「面试会话凭证不存在」+「实时连接失败」。该义务写在 T-040 文档里但
+  义务方是 Spring，而 T-030/T-103 都把「对话流」划给了 T-040，所以两边都以为对方做了。
+  现已在 T-030 范围内补齐：创建会话时铸 32 字节随机令牌存入 `AuthTokenStore`（key
+  `interview:runtime-token:{id}`，TTL = 时长 + 1h）并随创建响应返回；大纲就绪回调里读出同一个
+  令牌，连同 config/resume 一起交接给运行时；结束会话时删除令牌。
+- **新增内部接口**：`POST /internal/interviews/{id}/questions`（动态出题落库，order 由
+  Spring 按现有题数决定，会话已结束时拒绝）。

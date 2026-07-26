@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.schemas.outline import InterviewPhase
+from app.schemas.outline import InterviewPhase, OutlineConfig, OutlineResume
 
 
 class RuntimeQuestion(BaseModel):
@@ -65,6 +65,9 @@ class InterviewSessionState(BaseModel):
     durationMin: Literal[15, 30, 45]
     interviewerStyle: str = Field(min_length=1)
     accessTokenHash: str = Field(min_length=64, max_length=64)
+    config: OutlineConfig
+    resume: OutlineResume
+    # 只包含「已经问过或正在问」的题；下一题在需要时才生成并追加。
     questions: list[RuntimeQuestion] = Field(min_length=1)
     phase: RuntimeInterviewPhase = RuntimeInterviewPhase.GREETING
     currentQuestionIndex: int | None = None
@@ -113,10 +116,25 @@ class AgentDecision(BaseModel):
     authenticity: Literal["consistent", "uncertain"] | None = None
 
 
+class GeneratedQuestion(BaseModel):
+    """运行时现场生成的单题（阶段由调用方按预算决定，不交给模型）。"""
+
+    text: str = Field(min_length=1)
+    focusPoints: list[str] = Field(min_length=1)
+    suggestedSeconds: int = Field(gt=0)
+
+
 class InterviewStartRequest(BaseModel):
+    """
+    运行时启动载荷。题目按阶段预算在面试过程中动态生成，所以这里只收已定稿的开场题；
+    `config`/`resume` 是后续出题所需的上下文，必须随启动一起交接。
+    """
+
     durationMin: Literal[15, 30, 45]
     interviewerStyle: str = Field(min_length=1)
     accessToken: str = Field(min_length=32, max_length=256)
+    config: OutlineConfig
+    resume: OutlineResume
     questions: list[RuntimeQuestion] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -134,17 +152,8 @@ class InterviewStartRequest(BaseModel):
         indexes = [phase_order[question.phase] for question in ordered_questions]
         if indexes != sorted(indexes):
             raise ValueError("question phases must follow the interview state machine")
-
-        phases = {question.phase for question in self.questions}
-        required = {
-            InterviewPhase.SELF_INTRO,
-            InterviewPhase.CANDIDATE_QA,
-            InterviewPhase.CLOSING,
-        }
-        if not required.issubset(phases):
-            raise ValueError("outline must include SELF_INTRO, CANDIDATE_QA and CLOSING")
-        if ordered_questions[-1].phase is not InterviewPhase.CLOSING:
-            raise ValueError("CLOSING must be the final outline question")
+        if ordered_questions[0].phase is not InterviewPhase.SELF_INTRO:
+            raise ValueError("runtime must start from a SELF_INTRO question")
         return self
 
 

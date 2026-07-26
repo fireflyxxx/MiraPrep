@@ -21,6 +21,14 @@ def _start_request() -> InterviewStartRequest:
             "durationMin": 15,
             "interviewerStyle": "high_pressure",
             "accessToken": "test-runtime-token-40-at-least-32-chars",
+            "config": {
+                "jobDirection": "backend",
+                "difficulty": "medium",
+                "types": ["technical"],
+                "durationMin": 15,
+                "interviewerStyle": "high_pressure",
+            },
+            "resume": {"parsedJson": {"skills": ["FastAPI"]}},
             "questions": [
                 {
                     "questionId": "q1",
@@ -787,12 +795,86 @@ async def test_stream_replays_only_events_after_client_seq() -> None:
 
 
 @pytest.mark.asyncio
+async def test_stream_keeps_connection_alive_while_answer_holds_session_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, store, _, _, _, _ = _service()
+    await service.start(40, _start_request())
+
+    async def no_events(session_id: int, after_seq: int, timeout: float):
+        return []
+
+    async def busy_deadline(session_id: int) -> bool:
+        raise TimeoutError("session is busy")
+
+    monkeypatch.setattr(store, "wait_for_events", no_events)
+    monkeypatch.setattr(service, "enforce_deadline", busy_deadline)
+
+    stream = service.stream_events(40, after_seq=4)
+    heartbeat = await anext(stream)
+    await stream.aclose()
+
+    assert heartbeat == ": heartbeat\n\n"
+
+
+@pytest.mark.asyncio
+async def test_follow_up_answer_is_evaluated_against_latest_interviewer_prompt() -> None:
+    follow_up = "请具体说明你怎样定位并解决这个性能瓶颈。"
+    llm = ScriptedLlm(
+        decisions=[
+            '{"action":"FOLLOW_UP","responseInstruction":"追问性能定位过程"}',
+            '{"action":"NEXT_QUESTION"}',
+        ],
+        replies=[follow_up],
+    )
+    module = import_module("app.services.interview_agent")
+    store = InMemorySessionStateStore()
+    service = module.InterviewAgentService(
+        store=store,
+        llm=llm,
+        message_sink=RecordingMessageSink(),
+        grading_trigger=RecordingGradingTrigger(),
+        clock=MutableClock(),
+    )
+    await service.start(40, _start_request())
+
+    await service.answer(
+        40,
+        InterviewAnswerRequest(
+            answerId="answer-follow-up-001",
+            content="我负责过一次接口性能优化。",
+            questionId="q1",
+        ),
+    )
+    await service.answer(
+        40,
+        InterviewAnswerRequest(
+            answerId="answer-follow-up-002",
+            content="我先用链路追踪定位慢查询，再补索引并压测验证。",
+            questionId="q1",
+        ),
+    )
+
+    second_decision_prompt = llm.complete_calls[-1]["messages"][0]["content"]
+    assert follow_up in second_decision_prompt
+    assert '"currentQuestion": "请简要介绍自己。"' not in second_decision_prompt
+
+
+@pytest.mark.asyncio
 async def test_complete_interview_visits_every_phase_and_ends_with_grading() -> None:
     request = InterviewStartRequest.model_validate(
         {
             "durationMin": 15,
             "interviewerStyle": "professional",
             "accessToken": "test-runtime-token-40-at-least-32-chars",
+            "config": {
+                "jobDirection": "backend",
+                "difficulty": "medium",
+                "types": ["technical"],
+                "durationMin": 15,
+                "interviewerStyle": "high_pressure",
+            },
+            "resume": {"parsedJson": {"skills": ["FastAPI"]}},
             "questions": [
                 {
                     "questionId": f"q{index}",

@@ -14,8 +14,10 @@ from pydantic import ValidationError
 from app.main import app
 from app.prompts.outline import SYSTEM_PROMPT, build_user_prompt
 from app.routers.internal import get_outline_service
-from app.schemas.outline import InterviewPhase, OutlineRequest
+from app.schemas.outline import InterviewPhase, OutlineRequest, OutlineResult
 from app.services.outline import (
+    OPENING_BUDGET,
+    _validate_outline,
     OutlineGenerationService,
     _extract_resume_facts,
     build_phase_budget,
@@ -92,7 +94,8 @@ class RecordingOutlineService:
 
 
 def _outline_payload(request: OutlineRequest) -> dict[str, Any]:
-    budget = build_phase_budget(request.config.durationMin, request.config.types)
+    # 大纲阶段只定稿开场题，其余题目由运行时按预算动态生成。
+    budget = OPENING_BUDGET
     question_count = sum(budget.values())
     seconds = request.config.durationMin * 60 // question_count
     questions: list[dict[str, Any]] = []
@@ -254,14 +257,8 @@ async def test_service_success_generates_duration_aware_ready_callback(
     call = callback.calls[0]
     assert call["path"].endswith(f"/interviews/{request.sessionId}/outline-result")
     assert call["json"]["status"] == "ready"
-    assert len(call["json"]["questions"]) == sum(
-        build_phase_budget(duration_min, request.config.types).values()
-    )
-    assert any(
-        question["phase"] == "RESUME_DEEP_DIVE"
-        and ("MiraPrep" in question["text"] or "FastAPI" in question["text"])
-        for question in call["json"]["questions"]
-    )
+    # 只交付开场题：题目在面试过程中动态生成，不再一次性铺完。
+    assert [question["phase"] for question in call["json"]["questions"]] == ["SELF_INTRO"]
     assert llm.system == SYSTEM_PROMPT
     assert llm.closed is True
     assert callback.closed is True
@@ -300,24 +297,19 @@ def _invalid_business_outline(request: OutlineRequest, violation: str) -> str:
     payload = _outline_payload(request)
     questions = payload["questions"]
     if violation == "phase_count":
-        questions.pop(2)
-        for index, question in enumerate(questions, start=1):
-            question["order"] = index
+        # 开场题之外多出一题：与 OPENING_BUDGET 不符，必须被拒。
+        questions.append({**questions[0], "order": len(questions) + 1})
     elif violation == "order":
         questions[0]["order"] = 2
     elif violation == "duration":
         questions[0]["suggestedSeconds"] = request.config.durationMin * 60 + 1
-    elif violation == "resume_reference":
-        for question in questions:
-            if question["phase"] == "RESUME_DEEP_DIVE":
-                question["text"] = "请介绍一段相关项目经历。"
     else:  # pragma: no cover - test helper misuse
         raise AssertionError(f"unknown violation: {violation}")
     return json.dumps(payload, ensure_ascii=False)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("violation", ["phase_count", "order", "duration", "resume_reference"])
+@pytest.mark.parametrize("violation", ["phase_count", "order", "duration"])
 async def test_service_rejects_invalid_business_outline(violation: str) -> None:
     request = OutlineRequest.model_validate(_request_data(30))
     llm = RecordingLlm(_invalid_business_outline(request, violation))
@@ -411,3 +403,26 @@ def test_outline_route_rejects_invalid_request_without_scheduling(
     if expected_detail:
         assert response.json()["detail"] == expected_detail
     assert service.requests == []
+
+
+def test_validate_outline_still_requires_deep_dive_to_reference_resume() -> None:
+    """深挖题必须落在真实简历事实上；运行时动态出题复用同一条规则。"""
+
+    request = OutlineRequest.model_validate(_request_data(30))
+    budget = {InterviewPhase.RESUME_DEEP_DIVE: 1}
+    result = OutlineResult.model_validate(
+        {
+            "questions": [
+                {
+                    "phase": "RESUME_DEEP_DIVE",
+                    "text": "请介绍一段相关项目经历。",
+                    "focusPoints": ["项目深度"],
+                    "order": 1,
+                    "suggestedSeconds": 120,
+                }
+            ]
+        }
+    )
+
+    with pytest.raises(Exception, match="resume facts"):
+        _validate_outline(result, request, budget)

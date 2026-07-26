@@ -48,12 +48,20 @@ class GradingRequest(BaseModel):
         return self
 
 
+class FollowUpReview(BaseModel):
+    question: str = Field(min_length=1)
+    answer: str = Field(min_length=1)
+    answerSeconds: int | None = Field(default=None, ge=0)
+    referenceAnswer: str = Field(min_length=1)
+    suggestions: list[str] = Field(min_length=1)
+
+
 class QuestionReview(BaseModel):
     questionId: int = Field(gt=0)
     score: int = Field(ge=0, le=10)
     referenceAnswer: str = Field(min_length=1)
     suggestions: list[str] = Field(min_length=1)
-    followUpChain: list[dict[str, Any] | str] = Field(default_factory=list)
+    followUpChain: list[FollowUpReview] = Field(default_factory=list)
 
 
 class SummaryReview(BaseModel):

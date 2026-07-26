@@ -14,6 +14,14 @@ def _state(session_id: int = 40):  # type: ignore[no-untyped-def]
         durationMin=15,
         interviewerStyle="professional",
         accessTokenHash="a" * 64,
+        config={
+            "jobDirection": "backend",
+            "difficulty": "medium",
+            "types": ["technical"],
+            "durationMin": 15,
+            "interviewerStyle": "professional",
+        },
+        resume={"parsedJson": {"skills": ["FastAPI"]}},
         questions=[
             {
                 "questionId": "q1",
