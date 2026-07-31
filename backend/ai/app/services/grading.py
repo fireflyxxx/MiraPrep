@@ -166,6 +166,17 @@ class _StructuredOutputHealth:
     usable: bool = True
 
 
+def _rejects_structured_output(error: Exception) -> bool:
+    """供应商直接回绝 tool_choice（400）——重发同样的请求没有意义，立刻改走 plain JSON。
+
+    实际踩到过：DeepSeek 的 thinking 模式返回
+    `Thinking mode does not support this tool_choice`，这是 BadRequestError 而不是
+    解析失败，原来只捕获解析异常的分支接不住，整场批改直接抛出去。
+    """
+
+    return getattr(error, "status_code", None) == 400
+
+
 async def _invoke_structured(
     chain: Any,
     grading_data: str,
@@ -179,7 +190,18 @@ async def _invoke_structured(
     for attempt in range(1, _STRUCTURED_OUTPUT_ATTEMPTS + 1):
         try:
             return await chain.ainvoke({"grading_data": grading_data})
-        except (OutputParserException, ValidationError):
+        except Exception as error:
+            if not isinstance(error, OutputParserException | ValidationError):
+                if not _rejects_structured_output(error) or plain_json_fallback is None:
+                    raise
+                if health is not None:
+                    health.usable = False
+                logger.warning(
+                    "grading %s: provider rejected structured output (%s); using plain JSON",
+                    output_kind,
+                    type(error).__name__,
+                )
+                return await plain_json_fallback()
             if attempt == _STRUCTURED_OUTPUT_ATTEMPTS:
                 if plain_json_fallback is None:
                     raise

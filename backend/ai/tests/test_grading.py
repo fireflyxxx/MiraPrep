@@ -948,3 +948,63 @@ async def test_structured_output_retries_normally_while_it_still_works() -> None
 
     assert result == "structured"
     assert health.usable is True
+
+
+@pytest.mark.asyncio
+async def test_provider_rejecting_tool_choice_falls_back_instead_of_killing_the_run() -> None:
+    """DeepSeek 的 thinking 模式直接 400 回绝 tool_choice；这不是解析失败，
+    原来的分支接不住，整场批改会抛出去、最终标记为 FAILED。"""
+
+    grading = import_module("app.services.grading")
+    calls = {"structured": 0, "plain": 0}
+
+    class RejectingChain:
+        async def ainvoke(self, _payload: dict[str, str]) -> object:
+            calls["structured"] += 1
+            error = Exception("Thinking mode does not support this tool_choice")
+            error.status_code = 400  # type: ignore[attr-defined]
+            raise error
+
+    async def plain_fallback() -> str:
+        calls["plain"] += 1
+        return "recovered"
+
+    health = grading._StructuredOutputHealth()
+    assert (
+        await grading._invoke_structured(
+            RejectingChain(),
+            "payload",
+            output_kind="question review",
+            health=health,
+            plain_json_fallback=plain_fallback,
+        )
+        == "recovered"
+    )
+
+    # 400 是确定性的，重发同样的请求毫无意义，只能试一次就换路。
+    assert calls == {"structured": 1, "plain": 1}
+    assert health.usable is False
+
+
+@pytest.mark.asyncio
+async def test_non_contract_provider_errors_still_surface() -> None:
+    """401/限流之类的问题不能被 plain JSON 兜住，否则真正的故障会被藏起来。"""
+
+    grading = import_module("app.services.grading")
+
+    class UnauthorizedChain:
+        async def ainvoke(self, _payload: dict[str, str]) -> object:
+            error = Exception("invalid x-api-key")
+            error.status_code = 401  # type: ignore[attr-defined]
+            raise error
+
+    async def plain_fallback() -> str:
+        raise AssertionError("plain JSON fallback must not run for a 401")
+
+    with pytest.raises(Exception, match="invalid x-api-key"):
+        await grading._invoke_structured(
+            UnauthorizedChain(),
+            "payload",
+            output_kind="question review",
+            plain_json_fallback=plain_fallback,
+        )
