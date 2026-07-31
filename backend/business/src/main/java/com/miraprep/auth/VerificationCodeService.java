@@ -39,7 +39,7 @@ public class VerificationCodeService {
         String normalizedEmail = normalizeEmail(email);
         String requestKey = "auth:verification:resend:" + clientIp + ':' + scene + ':' + normalizedEmail;
         if (!rateLimiter.tryAcquire(requestKey, 1, resendTtl)) {
-            throw new BusinessException(ErrorCode.VERIFICATION_CODE_TOO_FREQUENT);
+            throw new BusinessException(ErrorCode.RATE_LIMITED);
         }
         String code = String.format("%06d", secureRandom.nextInt(1_000_000));
         tokenStore.put(codeKey(normalizedEmail, scene), code, codeTtl);

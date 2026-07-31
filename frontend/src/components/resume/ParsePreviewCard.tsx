@@ -1,7 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import type { ResumeDetail } from "@/lib/api/resume";
+import ResumeOverlayPortal from "./ResumeOverlayPortal";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return <section><h4 className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground">{title}</h4>{children}</section>;
@@ -9,8 +10,25 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 export default function ParsePreviewCard({ resume, onClose, onRetry }: { resume: ResumeDetail; onClose: () => void; onRetry?: () => void }) {
   const parsed = resume.parsedJson;
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-5 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="简历解析预览">
+    <ResumeOverlayPortal>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-5 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="简历解析预览"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
       <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-[20px] border border-border bg-surface p-6 shadow-2xl">
         <div className="mb-5 flex items-start justify-between gap-4">
           <div><h3 className="text-lg font-semibold">{resume.fileName}</h3><p className="mt-1 text-xs text-muted-foreground">{resume.pageCount ? `${resume.pageCount} 页 · ` : ""}结构化解析预览</p></div>
@@ -29,5 +47,6 @@ export default function ParsePreviewCard({ resume, onClose, onRetry }: { resume:
         )}
       </div>
     </div>
+    </ResumeOverlayPortal>
   );
 }

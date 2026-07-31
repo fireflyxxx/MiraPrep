@@ -1,6 +1,7 @@
 package com.miraprep.interview;
 
 import com.miraprep.auth.AuthTokenStore;
+import com.miraprep.auth.RequestRateLimiter;
 import com.miraprep.client.AiServiceClient;
 import com.miraprep.common.error.ErrorCode;
 import com.miraprep.common.exception.BusinessException;
@@ -48,6 +49,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -63,6 +65,9 @@ public class InterviewService {
     private final ReportRepository reportRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final AuthTokenStore runtimeTokenStore;
+    private final RequestRateLimiter rateLimiter;
+    private final Duration createWindow;
+    private final int createMaxAttempts;
 
     public InterviewService(
             InterviewSessionRepository interviewSessionRepository,
@@ -71,7 +76,10 @@ public class InterviewService {
             ResumeRepository resumeRepository,
             ReportRepository reportRepository,
             ApplicationEventPublisher eventPublisher,
-            AuthTokenStore runtimeTokenStore) {
+            AuthTokenStore runtimeTokenStore,
+            RequestRateLimiter rateLimiter,
+            @Value("${app.interview.create-window}") long createWindowSeconds,
+            @Value("${app.interview.create-max-attempts}") int createMaxAttempts) {
         this.interviewSessionRepository = interviewSessionRepository;
         this.questionRepository = questionRepository;
         this.interviewMessageRepository = interviewMessageRepository;
@@ -79,15 +87,22 @@ public class InterviewService {
         this.reportRepository = reportRepository;
         this.eventPublisher = eventPublisher;
         this.runtimeTokenStore = runtimeTokenStore;
+        this.rateLimiter = rateLimiter;
+        this.createWindow = Duration.ofSeconds(createWindowSeconds);
+        this.createMaxAttempts = createMaxAttempts;
     }
 
     @Transactional
-    public CreateInterviewResponse create(Long userId, CreateInterviewRequest request) {
+    public CreateInterviewResponse create(Long userId, String clientIp, CreateInterviewRequest request) {
         Resume resume = resumeRepository.findById(request.resumeId())
                 .filter(candidate -> !candidate.isDeleted())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
         if (!resume.getUser().getId().equals(userId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        if (!rateLimiter.tryAcquire(
+                "interview:create:" + clientIp + ':' + userId, createMaxAttempts, createWindow)) {
+            throw new BusinessException(ErrorCode.RATE_LIMITED);
         }
 
         InterviewDifficulty difficulty = enumValue(InterviewDifficulty.class, request.difficulty());

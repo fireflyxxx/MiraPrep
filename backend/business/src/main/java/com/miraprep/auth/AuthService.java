@@ -70,7 +70,7 @@ public class AuthService {
         String email = normalizeEmail(request.email());
         String rateLimitKey = "auth:login:" + clientIp + ':' + email;
         if (!rateLimiter.tryAcquire(rateLimitKey, loginMaxAttempts, loginWindow)) {
-            throw new BusinessException(ErrorCode.LOGIN_RATE_LIMITED);
+            throw new BusinessException(ErrorCode.RATE_LIMITED);
         }
         User user = userRepository.findByEmail(email).orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
@@ -83,7 +83,8 @@ public class AuthService {
         try {
             JwtClaims claims = jwtService.parseRefreshToken(refreshToken);
             String registeredUserId = tokenStore.consume(refreshKey(claims.tokenId()));
-            if (!Long.toString(claims.userId()).equals(registeredUserId)) {
+            if (!Long.toString(claims.userId()).equals(registeredUserId)
+                    || !userRepository.existsById(claims.userId())) {
                 throw new BusinessException(ErrorCode.INVALID_REFRESH_TOKEN);
             }
             IssuedRefreshToken newRefresh = jwtService.createRefreshToken(claims.userId());

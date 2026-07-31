@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { useReport } from "@/lib/api/report";
+import { useReport, type InterviewReport } from "@/lib/api/report";
 import type { Grade } from "@/lib/api/stats";
 import { difficultyLabel } from "@/lib/interview-options";
 
@@ -17,6 +17,21 @@ const gradeClasses: Record<Grade, string> = {
 function formatMinutes(seconds: number) {
   if (seconds <= 0) return "—";
   return `${Math.max(1, Math.round(seconds / 60))}min`;
+}
+
+/** 追问往往占掉大半场时间，只累加主问题会把「总用时」压到实际的零头。 */
+export function totalSpentSeconds(questions: InterviewReport["questions"]): number {
+  return questions.reduce(
+    (total, question) =>
+      total +
+      (question.thinkSeconds ?? 0) +
+      (question.answerSeconds ?? 0) +
+      question.followUpChain.reduce(
+        (chainTotal, followUp) => chainTotal + (followUp.answerSeconds ?? 0),
+        0,
+      ),
+    0,
+  );
 }
 
 function ResultSkeleton() {
@@ -38,8 +53,22 @@ function ResultSkeleton() {
   );
 }
 
+function ResultGenerating() {
+  return (
+    <div className="relative mx-auto w-full max-w-[520px] text-center" role="status">
+      <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-primary-soft">
+        <span className="h-9 w-9 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
+      </div>
+      <h1 className="mb-2 text-2xl font-semibold">正在生成面试报告</h1>
+      <p className="mx-auto max-w-md text-sm leading-relaxed text-muted-foreground">
+        AI 正在逐题批改并汇总五维表现，通常需要几分钟。完成后本页会自动展示结果，无需手动刷新。
+      </p>
+    </div>
+  );
+}
+
 export default function InterviewResultClient({ sessionId }: { sessionId: string }) {
-  const { data, isPending, isError, refetch } = useReport(sessionId);
+  const { data, status, isPending, isError, refetch } = useReport(sessionId);
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-6 py-8 text-foreground">
@@ -54,12 +83,16 @@ export default function InterviewResultClient({ sessionId }: { sessionId: string
         }}
       />
 
-      {isPending ? <ResultSkeleton /> : null}
+      {isPending ? (status === "grading" ? <ResultGenerating /> : <ResultSkeleton />) : null}
       {isError ? (
         <div className="relative max-w-md rounded-2xl border border-border bg-surface p-8 text-center">
-          <h1 className="mb-2 text-2xl font-semibold">评级暂时没有准备好</h1>
+          <h1 className="mb-2 text-2xl font-semibold">
+            {status === "failed" ? "报告生成失败" : "评级暂时没有准备好"}
+          </h1>
           <p className="mb-6 text-sm text-muted-foreground">
-            报告可能仍在生成，也可能遇到了网络问题，请稍后重试。
+            {status === "failed"
+              ? "本次批改未能完成，请重新发起加载；若仍然失败，请稍后再试。"
+              : "暂时无法确认报告状态，请检查网络后重试。"}
           </p>
           <div className="flex justify-center gap-3">
             <Link className="mira-button rounded-xl border border-border px-4 py-2.5" href="/dashboard">
@@ -143,16 +176,8 @@ export default function InterviewResultClient({ sessionId }: { sessionId: string
               value={data.questions.filter((question) => question.answer).length}
               label="回答题数"
             />
-            <Stat
-              value={formatMinutes(
-                data.questions.reduce(
-                  (total, question) =>
-                    total + (question.thinkSeconds ?? 0) + (question.answerSeconds ?? 0),
-                  0,
-                ),
-              )}
-              label="总用时"
-            />
+            {/* 统计的是思考+作答时长，不含面试官生成回复的等待，所以不叫「总用时」。 */}
+            <Stat value={formatMinutes(totalSpentSeconds(data.questions))} label="作答用时" />
             <Stat value={`${data.config.durationMin}min`} label="设定时长" />
           </div>
 

@@ -94,6 +94,21 @@ $aiEnvironment = @{
     INTERNAL_TOKEN = $internalToken
     BUSINESS_CALLBACK_URL = "http://127.0.0.1:8080/api/v1/internal"
 }
+# The child process inherits this shell's environment, and pydantic-settings lets a real
+# environment variable win over .env. Host shells (Claude Code, for one) export their own
+# ANTHROPIC_* values, so without an explicit override the AI service silently talks to the
+# wrong endpoint. Pin every key from backend/ai/.env instead.
+$anthropicKeys = @("ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "ANTHROPIC_GRADING_MODEL", "ANTHROPIC_BASE_URL", "ANTHROPIC_MAX_TOKENS")
+$nullableAnthropicKeys = @("ANTHROPIC_BASE_URL", "ANTHROPIC_GRADING_MODEL")
+foreach ($key in $anthropicKeys) {
+    if ($aiEnv.ContainsKey($key)) {
+        $aiEnvironment[$key] = $aiEnv[$key]
+    }
+    elseif ($nullableAnthropicKeys -contains $key) {
+        # Nullable settings: when .env stays silent we must blank the host value, not inherit it.
+        $aiEnvironment[$key] = ""
+    }
+}
 
 try {
     Write-Host "[2/5] Starting FastAPI AI service..."

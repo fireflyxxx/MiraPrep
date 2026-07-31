@@ -8,7 +8,11 @@ import {
 import { endpoints, toApiUrl } from "./endpoints";
 import { ApiError, type ApiResponse } from "./types";
 
-type ApiRequestOptions = RequestInit & { skipAuthRefresh?: boolean };
+type ApiRequestOptions = RequestInit & {
+  skipAuthRefresh?: boolean;
+  /** 登录/注册这类端点必须匿名发出：带上过期的旧 token 会被网关先拦成 401，用户再也登不回来。 */
+  anonymous?: boolean;
+};
 type ApiErrorHandler = (error: ApiError) => void;
 
 const apiEnvelopeSchema = z.object({
@@ -124,11 +128,11 @@ async function request<T>(
   options: ApiRequestOptions,
   hasRetriedAfterRefresh: boolean,
 ): Promise<T> {
-  const { skipAuthRefresh = false, ...requestOptions } = options;
+  const { skipAuthRefresh = false, anonymous = false, ...requestOptions } = options;
   const response = await fetch(toApiUrl(path), {
     ...requestOptions,
     credentials: requestOptions.credentials ?? "include",
-    headers: buildHeaders(requestOptions, true),
+    headers: buildHeaders(requestOptions, !anonymous),
   });
   if (response.status === 204) {
     return undefined as T;

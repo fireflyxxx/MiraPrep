@@ -15,6 +15,7 @@ import com.miraprep.interview.InterviewSessionRepository;
 import com.miraprep.interview.QuestionRepository;
 import com.miraprep.resume.ObjectStorageService;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -52,6 +53,12 @@ class InterviewMessageApiIntegrationTest {
         registry.add("app.internal-token", () -> "test-internal-token");
     }
 
+    @BeforeEach
+    void signPrivateObjects() throws Exception {
+        org.mockito.Mockito.when(objectStorageService.signedDownloadUrl(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn("https://minio.test/signed-audio");
+    }
+
     @Test
     void callbackPersistsMessagesIdempotentlyAndReadReturnsOrderedIncrementalHistory() throws Exception {
         String token = registerAndGetAccessToken();
@@ -86,6 +93,45 @@ class InterviewMessageApiIntegrationTest {
         InterviewSession session = interviewSessionRepository.findById(sessionId).orElseThrow();
         org.assertj.core.api.Assertions.assertThat(session.getStatus()).isEqualTo(InterviewStatus.ONGOING);
         org.assertj.core.api.Assertions.assertThat(session.getStartedAt()).isNotNull();
+    }
+
+    @Test
+    void privateAudioKeysAreSignedAndExternalUrlsAreRejected() throws Exception {
+        String token = registerAndGetAccessToken();
+        long sessionId = createInterview(token, uploadResume(token, "audio.pdf"));
+        Long userId = interviewSessionRepository.findById(sessionId).orElseThrow().getUser().getId();
+        String audioKey = "audio/%d/%d/answer.webm".formatted(userId, sessionId);
+
+        postMessage(sessionId, """
+                {
+                  "role": "candidate",
+                  "content": "answer",
+                  "phase": "self_intro",
+                  "audioUrl": "%s",
+                  "seq": 1
+                }
+                """.formatted(audioKey))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.audioUrl").value("https://minio.test/signed-audio"));
+
+        mockMvc.perform(get("/api/v1/interviews/{id}/messages", sessionId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].audioUrl").value("https://minio.test/signed-audio"));
+        org.mockito.Mockito.verify(objectStorageService, org.mockito.Mockito.atLeastOnce())
+                .signedDownloadUrl(audioKey);
+
+        postMessage(sessionId, """
+                {
+                  "role": "candidate",
+                  "content": "answer",
+                  "phase": "self_intro",
+                  "audioUrl": "https://evil.example/audio.webm",
+                  "seq": 2
+                }
+                """)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40000));
     }
 
     @Test
@@ -248,10 +294,9 @@ class InterviewMessageApiIntegrationTest {
                   "role": "%s",
                   "content": "%s",
                   "phase": "self_intro",
-                  "audioUrl": "https://example.test/audio/%d",
                   "seq": %d
                 }
-                """.formatted(role, content, seq, seq);
+                """.formatted(role, content, seq);
     }
 
     private String registerAndGetAccessToken() throws Exception {

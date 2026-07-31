@@ -10,11 +10,11 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     anthropic_api_key: SecretStr
-    anthropic_model: str = "claude-sonnet-5"
+    anthropic_model: str = "deepseek-v4-flash"
     anthropic_grading_model: str | None = None
     grading_worker_count: int = Field(default=2, ge=1, le=8)
     grading_max_delivery_attempts: int = Field(default=5, ge=1, le=100)
-    anthropic_base_url: str | None = None
+    anthropic_base_url: str | None = "https://api.deepseek.com/anthropic"
     anthropic_max_tokens: int = 4096
     business_callback_url: str
     internal_token: SecretStr
@@ -26,7 +26,10 @@ class Settings(BaseSettings):
 
     @property
     def allowed_origins(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        origins = [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        if "*" in origins:
+            raise ValueError("CORS_ORIGINS must list explicit origins when credentials are enabled")
+        return origins
 
     @property
     def resolved_grading_model(self) -> str:

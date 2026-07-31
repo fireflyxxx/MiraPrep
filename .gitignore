@@ -25,3 +25,4 @@
 
 # 本地验收产物（截图等）
 output/
+.playwright-cli/

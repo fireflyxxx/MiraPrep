@@ -23,12 +23,14 @@ import com.miraprep.interview.InterviewMessageRepository;
 import com.miraprep.interview.InterviewSessionRepository;
 import com.miraprep.interview.QuestionRepository;
 import com.miraprep.report.ReportRepository;
+import com.miraprep.resume.ObjectStorageService;
 import com.miraprep.user.UserRepository;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -40,6 +42,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.boot.test.mock.mockito.MockBean;
 
 @SpringBootTest(classes = BusinessApplication.class)
 @AutoConfigureMockMvc
@@ -54,6 +57,7 @@ class ReportStatsApiIntegrationTest {
     @Autowired private InterviewMessageRepository messageRepository;
     @Autowired private ReportRepository reportRepository;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @MockBean private ObjectStorageService objectStorageService;
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
@@ -67,13 +71,19 @@ class ReportStatsApiIntegrationTest {
         registry.add("app.internal-token", () -> "test-internal-token");
     }
 
+    @BeforeEach
+    void signPrivateAudioObjects() throws Exception {
+        org.mockito.Mockito.when(objectStorageService.signedDownloadUrl(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn("https://minio.test/signed-audio");
+    }
+
     @Test
     void successfulCallbackPersistsACompleteReportAndProjectsItIntoInterviewHistory()
             throws Exception {
         User owner = createUser();
         InterviewSession session = session(owner, Instant.parse("2026-07-20T10:30:00Z"), false);
         Question question = question(session, 1, "请介绍你在 MiraPrep 中做的可靠回调。");
-        candidateAnswer(question, "我用数据库事务和行锁保证幂等。", "https://audio.example/answer.mp3");
+        candidateAnswer(question, "我用数据库事务和行锁保证幂等。", audioKey(question, "answer.mp3"));
         message(question, MessageRole.INTERVIEWER, "如果两个回调同时到达呢？", null, 3);
         message(question, MessageRole.CANDIDATE, "我还会依赖唯一约束兜底。", null, 4);
 
@@ -98,7 +108,7 @@ class ReportStatsApiIntegrationTest {
                 .andExpect(jsonPath("$.data.questions[0].answer").value("我用数据库事务和行锁保证幂等。"))
                 .andExpect(jsonPath("$.data.questions[0].score").value(8))
                 .andExpect(jsonPath("$.data.questions[0].audioUrl")
-                        .value("https://audio.example/answer.mp3"))
+                        .value("https://minio.test/signed-audio"))
                 .andExpect(jsonPath("$.data.questions[0].followUpChain[0].question")
                         .value("如果并发到达呢？"));
 
@@ -252,6 +262,46 @@ class ReportStatsApiIntegrationTest {
     }
 
     @Test
+    void reportStatusDistinguishesGradingReadyFailedAndNoneWithoutUsing404AsPending()
+            throws Exception {
+        User owner = createUser();
+        User other = createUser();
+        InterviewSession session =
+                session(owner, Instant.parse("2026-07-20T10:30:00Z"), false);
+
+        session.setGradingStatus(GradingStatus.NONE);
+        sessionRepository.saveAndFlush(session);
+        getReportStatus(session.getId(), owner)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("none"));
+
+        session.setGradingStatus(GradingStatus.PENDING);
+        sessionRepository.saveAndFlush(session);
+        getReportStatus(session.getId(), owner)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("grading"));
+
+        session.setGradingStatus(GradingStatus.READY);
+        sessionRepository.saveAndFlush(session);
+        getReportStatus(session.getId(), owner)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("ready"));
+
+        session.setGradingStatus(GradingStatus.FAILED);
+        sessionRepository.saveAndFlush(session);
+        getReportStatus(session.getId(), owner)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("failed"));
+
+        getReportStatus(session.getId(), other)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40300));
+        getReportStatus(999_999L, owner)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(40400));
+    }
+
+    @Test
     void reportQueryKeepsTheReportReadableWhenHistoricalDimensionScoresAreDirty()
             throws Exception {
         User owner = createUser();
@@ -366,8 +416,8 @@ class ReportStatsApiIntegrationTest {
         User owner = createUser();
         InterviewSession session = session(owner, Instant.parse("2026-07-20T10:30:00Z"), false);
         Question question = question(session, 1, "同一题的主回答与追问回答");
-        message(question, MessageRole.CANDIDATE, "主回答", "https://audio.example/primary.mp3", 2);
-        message(question, MessageRole.CANDIDATE, "追问回答", "https://audio.example/followup.mp3", 4);
+        message(question, MessageRole.CANDIDATE, "主回答", audioKey(question, "primary.mp3"), 2);
+        message(question, MessageRole.CANDIDATE, "追问回答", audioKey(question, "followup.mp3"), 4);
 
         postGradeResult(session.getId(), gradePayload(question.getId(), 82, "A", false))
                 .andExpect(status().isOk());
@@ -376,7 +426,7 @@ class ReportStatsApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.questions[0].answer").value("主回答"))
                 .andExpect(jsonPath("$.data.questions[0].audioUrl")
-                        .value("https://audio.example/primary.mp3"));
+                        .value("https://minio.test/signed-audio"));
     }
 
     private String duplicateReviewPayload(long questionId) {
@@ -445,6 +495,11 @@ class ReportStatsApiIntegrationTest {
         message(question, MessageRole.CANDIDATE, content, audioUrl, 2);
     }
 
+    private String audioKey(Question question, String fileName) {
+        InterviewSession session = question.getSession();
+        return "audio/%d/%d/%s".formatted(session.getUser().getId(), session.getId(), fileName);
+    }
+
     private void message(
             Question question, MessageRole role, String content, String audioUrl, int seq) {
         InterviewMessage message = new InterviewMessage();
@@ -474,6 +529,12 @@ class ReportStatsApiIntegrationTest {
                         .header("X-Internal-Token", "test-internal-token")
                         .contentType("application/json")
                         .content(payload));
+    }
+
+    private org.springframework.test.web.servlet.ResultActions getReportStatus(
+            long sessionId, User owner) throws Exception {
+        return mockMvc.perform(
+                get("/api/v1/reports/{id}/status", sessionId).with(as(owner)));
     }
 
     private String gradePayload(long questionId, int score, String grade, boolean partial) {

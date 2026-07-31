@@ -71,6 +71,8 @@ describe("OnboardingPage", () => {
     render(<OnboardingPage />);
 
     await user.click(screen.getByRole("button", { name: "下一步 →" }));
+    await user.click(screen.getByText("React"));
+    await user.click(screen.getByText("TypeScript"));
     await user.type(screen.getByPlaceholderText("如：一线大厂 / 外企 / 创业公司"), "外企");
     await user.click(screen.getByRole("button", { name: "进入工作台 →" }));
 
@@ -81,7 +83,7 @@ describe("OnboardingPage", () => {
           method: "PUT",
           body: JSON.stringify({
             jobDirection: "frontend",
-            techStacks: ["React", "TypeScript", "Next.js"],
+            techStacks: ["React", "TypeScript"],
             experienceLevel: "JUNIOR",
             status: "ACTIVE",
             targetCompany: "外企",
@@ -93,6 +95,31 @@ describe("OnboardingPage", () => {
     expect(push).toHaveBeenCalledWith("/dashboard", {
       transitionTypes: ["nav-modal-out"],
     });
+  });
+
+  it("offers skills for the chosen job direction and accepts a custom one", async () => {
+    const user = userEvent.setup();
+    render(<OnboardingPage />);
+
+    await user.click(screen.getByText("后端工程师"));
+    await user.click(screen.getByRole("button", { name: "下一步 →" }));
+
+    expect(screen.getByText("Spring Boot")).toBeInTheDocument();
+    expect(screen.queryByText("React")).not.toBeInTheDocument();
+
+    await user.click(screen.getByText("Java"));
+    await user.click(screen.getByRole("button", { name: "+ 自定义" }));
+    await user.type(screen.getByLabelText("自定义技术栈"), "Kafka{Enter}");
+    await user.click(screen.getByRole("button", { name: "进入工作台 →" }));
+
+    await waitFor(() =>
+      expect(apiClient).toHaveBeenCalledWith(
+        "/users/me/profile",
+        expect.objectContaining({
+          body: expect.stringContaining('"techStacks":["Java","Kafka"]'),
+        }),
+      ),
+    );
   });
 
   it("disables both actions while saving and prevents duplicate submissions", async () => {

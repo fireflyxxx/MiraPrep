@@ -10,6 +10,7 @@ import {
 } from "@/lib/api/resume";
 import ParsePreviewCard from "./ParsePreviewCard";
 import ResumeCard from "./ResumeCard";
+import ResumeOverlayPortal from "./ResumeOverlayPortal";
 
 export default function ResumeList({
   mode,
@@ -58,8 +59,8 @@ export default function ResumeList({
           />
         ))}
       </div>
-      {previewId !== null && detail.isPending && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 text-white">正在加载简历详情…</div>}
-      {previewId !== null && detail.isError && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-5"><div className="rounded-xl bg-surface p-5 text-center"><p className="text-sm text-red-600">详情加载失败</p><button type="button" onClick={() => void detail.refetch()} className="mt-3 text-sm text-primary">重试</button><button type="button" onClick={() => setPreviewId(null)} className="ml-4 text-sm text-muted-foreground">关闭</button></div></div>}
+      {previewId !== null && detail.isPending && <ResumeOverlayPortal><div role="status" aria-label="简历详情加载中" className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 text-white">正在加载简历详情…</div></ResumeOverlayPortal>}
+      {previewId !== null && detail.isError && <ResumeOverlayPortal><div role="dialog" aria-modal="true" aria-label="简历详情加载失败" className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-5"><div className="rounded-xl bg-surface p-5 text-center"><p className="text-sm text-red-600">详情加载失败</p><button type="button" onClick={() => void detail.refetch()} className="mt-3 text-sm text-primary">重试</button><button type="button" onClick={() => setPreviewId(null)} className="ml-4 text-sm text-muted-foreground">关闭</button></div></div></ResumeOverlayPortal>}
       {detail.data && <ParsePreviewCard
         resume={detail.data}
         onClose={() => setPreviewId(null)}

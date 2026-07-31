@@ -187,9 +187,9 @@ AI_INTERNAL_TOKEN=...        # 内部调用鉴权
 **backend/ai/.env**
 ```
 ANTHROPIC_API_KEY=...
-ANTHROPIC_MODEL=claude-sonnet-5
-ANTHROPIC_GRADING_MODEL=claude-opus-4-8
-ANTHROPIC_BASE_URL=...       # 可选：Anthropic 兼容服务地址；留空使用默认 Anthropic 地址
+ANTHROPIC_MODEL=deepseek-v4-flash
+ANTHROPIC_GRADING_MODEL=       # 留空：批改继承主模型，确保全流程统一使用 Flash
+ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
 ANTHROPIC_MAX_TOKENS=4096    # 单次模型输出上限
 GRADING_WORKER_COUNT=2
 GRADING_MAX_DELIVERY_ATTEMPTS=5

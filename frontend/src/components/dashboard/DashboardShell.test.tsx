@@ -36,7 +36,17 @@ describe("DashboardShell", () => {
     expect(within(navigation).getByRole("link", { name: "工作台" })).toHaveAttribute("href", "/dashboard");
     expect(within(navigation).getByRole("link", { name: "我的面试" })).toHaveAttribute("href", "/interviews");
     expect(within(navigation).getByRole("link", { name: "题库训练" })).toHaveAttribute("href", "/practice");
+    expect(within(navigation).getByRole("link", { name: "设置" })).toHaveAttribute("href", "/settings");
     expect(within(navigation).getByRole("button", { name: "退出" })).toBeInTheDocument();
+  });
+
+  it("links the desktop account menu to the settings page", async () => {
+    const user = userEvent.setup();
+    render(<QueryClientProvider client={createQueryClient()}><DashboardShell><p>dashboard</p></DashboardShell></QueryClientProvider>);
+
+    await user.click(screen.getByRole("button", { name: /真实用户/ }));
+
+    expect(screen.getByRole("link", { name: "账户设置" })).toHaveAttribute("href", "/settings");
   });
 
   // jsdom 不跑 Tailwind，媒体查询断言不了；退而求其次守住两个断点类互补，

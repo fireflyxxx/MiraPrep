@@ -14,6 +14,7 @@ const streamInterview = vi.fn();
 const getInterviewRuntimeToken = vi.fn(() => "runtime-token");
 const getInterviewEventCursor = vi.fn(() => 0);
 let emit: ((event: InterviewStreamEvent) => void) | undefined;
+let openConnection: (() => void) | undefined;
 
 vi.mock("next/navigation", () => ({
   useRouter: () => router,
@@ -33,9 +34,11 @@ vi.mock("@/lib/api/interview-stream", async () => {
     endInterviewRuntime: (...args: unknown[]) => endInterviewRuntime(...args),
     streamInterview: (options: {
       onEvent: (event: InterviewStreamEvent) => void;
+      onOpen?: () => void;
       signal: AbortSignal;
     }) => {
       emit = options.onEvent;
+      openConnection = options.onOpen;
       return streamInterview(options);
     },
   };
@@ -82,6 +85,7 @@ describe("InterviewClient runtime", () => {
     getInterviewRuntimeToken.mockClear();
     getInterviewEventCursor.mockClear();
     emit = undefined;
+    openConnection = undefined;
   });
 
   it("does not read browser storage while rendering the SSR HTML", () => {
@@ -115,6 +119,19 @@ describe("InterviewClient runtime", () => {
         }),
       ),
     );
+  });
+
+  it("keeps the healthy connection state visually quiet", async () => {
+    render(<InterviewClient sessionId="42" />);
+    await waitFor(() => expect(openConnection).toBeTypeOf("function"));
+
+    act(() => openConnection?.());
+
+    const status = screen.getByRole("status", { name: "连接状态：会话在线" });
+    expect(status).toHaveAttribute("data-tone", "quiet");
+    expect(status).toHaveTextContent("会话在线");
+    expect(status).not.toHaveClass("rounded-full", "bg-emerald-50");
+    expect(screen.queryByText("实时连接正常")).not.toBeInTheDocument();
   });
 
   it("shows live total and current-question elapsed time from persisted timestamps", async () => {
@@ -523,6 +540,9 @@ describe("InterviewClient runtime", () => {
     expect(
       screen.getByRole("button", { name: "重新连接" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "连接状态：连接断开" }),
+    ).toHaveAttribute("data-tone", "critical");
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);

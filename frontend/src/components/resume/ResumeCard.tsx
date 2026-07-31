@@ -34,6 +34,7 @@ export default function ResumeCard({
   onSetDefault: (id: number) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [name, setName] = useState(resume.fileName);
   const selectable = mode !== "setup" || resume.parseStatus === "success";
   const stop = (event: MouseEvent) => event.stopPropagation();
@@ -83,7 +84,15 @@ export default function ResumeCard({
         <button type="button" onClick={() => onView(resume.id)} className="mira-button rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">查看</button>
         <button type="button" onClick={() => setEditing(true)} className="mira-button rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted">重命名</button>
         {!resume.isDefault && <button type="button" onClick={() => { void onSetDefault(resume.id).catch(() => {}); }} className="mira-button rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted">设为默认</button>}
-        <button type="button" onClick={() => { if (window.confirm("确定删除这份简历吗？")) void onDelete(resume.id).catch(() => {}); }} className="mira-button rounded-lg px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50">删除</button>
+        {confirmingDelete ? (
+          <>
+            <span className="px-1 text-xs text-muted-foreground">确定删除？</span>
+            <button type="button" onClick={() => { setConfirmingDelete(false); void onDelete(resume.id).catch(() => {}); }} className="mira-button rounded-lg px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50">确认删除</button>
+            <button type="button" onClick={() => setConfirmingDelete(false)} className="mira-button rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-muted">取消</button>
+          </>
+        ) : (
+          <button type="button" onClick={() => setConfirmingDelete(true)} className="mira-button rounded-lg px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50">删除</button>
+        )}
         {mode === "dashboard" && resume.parseStatus === "success" && (
           <Link href={`/interview/setup?resumeId=${resume.id}`} transitionTypes={["nav-forward"]} className="mira-button rounded-lg px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary-soft">用它面试 →</Link>
         )}

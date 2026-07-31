@@ -15,7 +15,13 @@ async def test_health_reports_up_and_configured_model(client: AsyncClient) -> No
     response = await client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "UP", "model": "claude-sonnet-5"}
+    assert response.json() == {"status": "UP", "model": "deepseek-v4-flash"}
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert (
+        response.headers["content-security-policy"] == "default-src 'none'; frame-ancestors 'none'"
+    )
 
 
 async def test_internal_ping_rejects_missing_token(client: AsyncClient) -> None:
@@ -37,6 +43,21 @@ async def test_internal_ping_accepts_matching_token(client: AsyncClient) -> None
 async def test_openapi_docs_are_served(client: AsyncClient) -> None:
     assert (await client.get("/docs")).status_code == 200
     assert (await client.get("/openapi.json")).json()["info"]["title"] == "MiraPrep AI Service"
+
+
+async def test_cors_rejects_unneeded_methods_and_headers(client: AsyncClient) -> None:
+    response = await client.options(
+        "/interviews/1/answer",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "PUT",
+            "Access-Control-Request-Headers": "X-Evil-Header",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "PUT" not in response.headers.get("access-control-allow-methods", "")
+    assert "x-evil-header" not in response.headers.get("access-control-allow-headers", "").lower()
 
 
 async def test_unhandled_errors_have_request_id_and_error_envelope(

@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.UUID;
@@ -181,7 +182,7 @@ class AuthApiIntegrationTest {
                         .contentType("application/json")
                         .content("{\"email\":\"%s\",\"scene\":\"register\"}".formatted(email)))
                 .andExpect(status().isTooManyRequests())
-                .andExpect(jsonPath("$.code").value(42901));
+                .andExpect(jsonPath("$.code").value(42900));
 
         for (int attempt = 0; attempt < 3; attempt++) {
             mockMvc.perform(post("/api/v1/auth/login")
@@ -195,6 +196,39 @@ class AuthApiIntegrationTest {
                         .content("{\"email\":\"%s\",\"password\":\"wrong-password\"}".formatted(email)))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value(42900));
+    }
+
+    @Test
+    void registrationRejectsPasswordsWithoutLettersAndNumbers() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType("application/json")
+                        .content("""
+                                {"email":"%s","password":"only-lowercase",
+                                 "nickname":"Learner","code":"123456"}
+                                """.formatted(uniqueEmail())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40000));
+
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType("application/json")
+                        .content("""
+                                {"email":"%s","password":"123456789012",
+                                 "nickname":"Learner","code":"123456"}
+                                """.formatted(uniqueEmail())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40000));
+    }
+
+    @Test
+    void apiResponsesIncludeBaselineSecurityHeaders() throws Exception {
+        mockMvc.perform(get("/api/v1/health"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
+                .andExpect(header().string("X-Frame-Options", "DENY"))
+                .andExpect(header().string("Referrer-Policy", "no-referrer"))
+                .andExpect(header().string(
+                        "Content-Security-Policy",
+                        "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"));
     }
 
     private static String uniqueEmail() {

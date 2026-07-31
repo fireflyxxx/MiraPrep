@@ -6,6 +6,7 @@ import com.miraprep.resume.dto.ResumeListResponse;
 import com.miraprep.resume.dto.ResumeSummaryResponse;
 import com.miraprep.resume.dto.UpdateResumeRequest;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -31,8 +32,10 @@ public class ResumeController {
 
     @PostMapping(consumes = "multipart/form-data")
     public ApiResponse<ResumeSummaryResponse> upload(
-            @RequestPart("file") MultipartFile file, Authentication authentication) {
-        return ApiResponse.ok(resumeService.upload(userId(authentication), file));
+            @RequestPart("file") MultipartFile file,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        return ApiResponse.ok(resumeService.upload(userId(authentication), httpRequest.getRemoteAddr(), file));
     }
 
     @GetMapping

@@ -54,7 +54,6 @@ describe("ResumeCard", () => {
   it("contains rejected default and delete mutations at the click boundary", async () => {
     const onSetDefault = vi.fn().mockRejectedValue(new Error("default failed"));
     const onDelete = vi.fn().mockRejectedValue(new Error("delete failed"));
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     renderCard({
       resume: { ...resume, parseStatus: "success" },
       onSetDefault,
@@ -64,10 +63,24 @@ describe("ResumeCard", () => {
 
     await user.click(screen.getByRole("button", { name: "设为默认" }));
     await user.click(screen.getByRole("button", { name: "删除" }));
+    await user.click(screen.getByRole("button", { name: "确认删除" }));
 
     await waitFor(() => {
       expect(onSetDefault).toHaveBeenCalledWith(7);
       expect(onDelete).toHaveBeenCalledWith(7);
     });
+  });
+
+  it("needs an in-page confirmation before deleting and lets the user back out", async () => {
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+    renderCard({ resume: { ...resume, parseStatus: "success" }, onDelete });
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "删除" }));
+    expect(onDelete).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "取消" }));
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "删除" })).toBeInTheDocument();
   });
 });

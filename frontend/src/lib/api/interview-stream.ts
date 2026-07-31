@@ -65,6 +65,8 @@ interface StreamInterviewOptions {
   afterSeq: number;
   signal: AbortSignal;
   onEvent: (event: InterviewStreamEvent) => void;
+  /** 流真正建立时触发；靠首个事件判连接会让静默期一直显示「正在连接」。 */
+  onOpen?: () => void;
 }
 
 export class InterviewRuntimeError extends Error {
@@ -280,6 +282,7 @@ export async function streamInterview({
   afterSeq,
   signal,
   onEvent,
+  onOpen,
 }: StreamInterviewOptions): Promise<void> {
   const response = await fetch(
     `${aiStreamUrl}/interviews/${sessionId}/stream?afterSeq=${afterSeq}`,
@@ -303,6 +306,7 @@ export async function streamInterview({
   if (!response.body) {
     throw new InterviewRuntimeError("浏览器未收到实时消息流", 502);
   }
+  onOpen?.();
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

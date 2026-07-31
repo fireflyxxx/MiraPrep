@@ -32,13 +32,23 @@ def test_settings_accepts_anthropic_compatible_base_url() -> None:
     assert settings.anthropic_base_url == "https://api.deepseek.com/anthropic"
 
 
-def test_grading_model_follows_primary_model_when_not_explicitly_configured() -> None:
+def test_settings_default_to_deepseek_v4_flash(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.anthropic_model == "deepseek-v4-flash"
+    assert settings.anthropic_base_url == "https://api.deepseek.com/anthropic"
+
+
+def test_grading_model_uses_flash_primary_when_not_explicitly_configured() -> None:
     settings = Settings(
-        anthropic_model="deepseek-v4-pro",
+        anthropic_model="deepseek-v4-flash",
         anthropic_grading_model=None,
     )
 
-    assert settings.resolved_grading_model == "deepseek-v4-pro"
+    assert settings.resolved_grading_model == "deepseek-v4-flash"
 
 
 def test_llm_client_passes_configuration_to_chat_anthropic(

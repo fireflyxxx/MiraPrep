@@ -11,9 +11,7 @@ public enum ErrorCode {
     INVALID_REFRESH_TOKEN(40102, HttpStatus.UNAUTHORIZED, "invalid refresh token"),
     FORBIDDEN(40300, HttpStatus.FORBIDDEN, "forbidden"),
     NOT_FOUND(40400, HttpStatus.NOT_FOUND, "not found"),
-    LOGIN_RATE_LIMITED(42900, HttpStatus.TOO_MANY_REQUESTS, "too many login attempts"),
-    VERIFICATION_CODE_TOO_FREQUENT(42901, HttpStatus.TOO_MANY_REQUESTS, "verification code requested too frequently"),
-    UPLOAD_RATE_LIMITED(42902, HttpStatus.TOO_MANY_REQUESTS, "too many upload attempts"),
+    RATE_LIMITED(42900, HttpStatus.TOO_MANY_REQUESTS, "too many requests"),
     INTERNAL(50000, HttpStatus.INTERNAL_SERVER_ERROR, "internal server error");
 
     private final int code;

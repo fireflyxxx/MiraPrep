@@ -105,13 +105,13 @@ function StageIcon({ thinking }: { thinking: boolean }) {
 function connectionLabel(state: ConnectionState): string {
   switch (state) {
     case "connected":
-      return "实时连接正常";
+      return "会话在线";
     case "reconnecting":
-      return "连接中断，正在重连";
+      return "正在恢复";
     case "failed":
-      return "实时连接失败";
+      return "连接断开";
     default:
-      return "正在连接面试官";
+      return "正在连接";
   }
 }
 
@@ -443,6 +443,7 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
             afterSeq: lastEventSeqRef.current,
             signal: controller.signal,
             onEvent: handleStreamEvent,
+            onOpen: () => setConnection("connected"),
           });
         } catch {
           if (controller.signal.aborted || endedRef.current) return;
@@ -573,16 +574,42 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
           </div>
           <div className="flex items-center gap-2 md:gap-3">
             <span
-              className={`hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-xs sm:inline-flex ${
+              role="status"
+              aria-live="polite"
+              aria-label={`连接状态：${connectionLabel(connection)}`}
+              data-tone={
                 connection === "connected"
-                  ? "bg-emerald-50 text-emerald-700"
+                  ? "quiet"
                   : connection === "failed"
-                    ? "bg-red-50 text-red-600"
-                    : "bg-orange-50 text-orange-600"
+                    ? "critical"
+                    : "in-progress"
+              }
+              className={`inline-flex h-8 items-center gap-2 border-r border-[#eceae6] pr-3 text-[11.5px] font-medium tracking-[0.01em] ${
+                connection === "connected"
+                  ? "text-[#6b6b68]"
+                  : connection === "failed"
+                    ? "text-[#8f413b]"
+                    : "text-[#806445]"
               }`}
             >
-              <span className="block h-1.5 w-1.5 rounded-full bg-current" />
-              {connectionLabel(connection)}
+              <span
+                aria-hidden="true"
+                className="relative flex h-3 w-3 shrink-0 items-center justify-center"
+              >
+                {(connection === "connecting" || connection === "reconnecting") && (
+                  <span className="absolute h-2.5 w-2.5 animate-ping rounded-full bg-[#c58a45]/20 motion-reduce:animate-none" />
+                )}
+                <span
+                  className={`relative block h-1.5 w-1.5 rounded-full ${
+                    connection === "connected"
+                      ? "bg-[#5f8f72]"
+                      : connection === "failed"
+                        ? "bg-[#b65b52]"
+                        : "bg-[#c58a45]"
+                  }`}
+                />
+              </span>
+              <span className="hidden sm:inline">{connectionLabel(connection)}</span>
             </span>
             {connection === "failed" && runtimeToken && (
               <button
@@ -592,7 +619,7 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
                   setErrorMessage(null);
                   setConnectionRetry((value) => value + 1);
                 }}
-                className="mira-button rounded-[9px] border border-orange-200 bg-orange-50 px-3 py-2 text-[13px] text-orange-700"
+                className="mira-button -ml-1 rounded-md px-2 py-1.5 text-[12px] font-medium text-[#8f413b] underline decoration-[#d8aaa6] underline-offset-4 hover:bg-[#fff7f6]"
               >
                 重新连接
               </button>

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import AuthGuard from "@/components/AuthGuard";
-import { experienceOptions, onboardJobs, skillOptions } from "@/lib/mock-data";
+import { experienceOptions, onboardJobs, skillOptionsByJob } from "@/lib/mock-data";
 import {
   updateMyProfile,
   type ExperienceLevel,
@@ -38,7 +38,8 @@ export default function OnboardingPage() {
   const [step, setStep] = useState<1 | 2>(1);
   const [job, setJob] = useState("frontend");
   const [exp, setExp] = useState("1-3");
-  const [skills, setSkills] = useState<string[]>(["React", "TypeScript", "Next.js"]);
+  const [skills, setSkills] = useState<string[]>([]);
+  const [customSkill, setCustomSkill] = useState<string | null>(null);
   const [targetCompany, setTargetCompany] = useState("");
   const [canOnboard, setCanOnboard] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -68,6 +69,16 @@ export default function OnboardingPage() {
 
   const toggleSkill = (sk: string) =>
     setSkills((cur) => (cur.includes(sk) ? cur.filter((x) => x !== sk) : [...cur, sk]));
+
+  // 候选项跟着岗位方向走，自定义项保留在末尾。
+  const presetSkills = skillOptionsByJob[job] ?? skillOptionsByJob.frontend;
+  const shownSkills = [...presetSkills, ...skills.filter((sk) => !presetSkills.includes(sk))];
+
+  const addCustomSkill = () => {
+    const value = (customSkill ?? "").trim();
+    if (value && !skills.includes(value)) setSkills((cur) => [...cur, value]);
+    setCustomSkill(null);
+  };
 
   const saveAndContinue = async (profile: UpdateProfileInput) => {
     if (!canOnboard || isSaving) return;
@@ -175,14 +186,34 @@ export default function OnboardingPage() {
                 你的技术栈 <span className="font-normal text-[#a3a3a3]">(多选)</span>
               </div>
               <div className="mb-6 flex flex-wrap gap-2">
-                {skillOptions.map((sk) => (
+                {shownSkills.map((sk) => (
                   <span key={sk} onClick={() => toggleSkill(sk)} className={pillClass(skills.includes(sk))}>
                     {sk}
                   </span>
                 ))}
-                <span className="mira-button cursor-pointer rounded-full border border-dashed border-[#d4d4d4] px-3.5 py-2 text-[13px] text-[#a3a3a3]">
-                  + 自定义
-                </span>
+                {customSkill === null ? (
+                  <button
+                    type="button"
+                    onClick={() => setCustomSkill("")}
+                    className="mira-button cursor-pointer rounded-full border border-dashed border-[#d4d4d4] px-3.5 py-2 text-[13px] text-[#a3a3a3]"
+                  >
+                    + 自定义
+                  </button>
+                ) : (
+                  <input
+                    autoFocus
+                    aria-label="自定义技术栈"
+                    value={customSkill}
+                    onChange={(event) => setCustomSkill(event.target.value)}
+                    onBlur={addCustomSkill}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") addCustomSkill();
+                      if (event.key === "Escape") setCustomSkill(null);
+                    }}
+                    placeholder="回车添加"
+                    className="mira-field w-28 rounded-full border border-orange-500 bg-white px-3.5 py-2 text-[13px] outline-none"
+                  />
+                )}
               </div>
               <div className="mb-2.5 text-[13px] font-medium">
                 目标公司类型 <span className="font-normal text-[#a3a3a3]">(选填)</span>

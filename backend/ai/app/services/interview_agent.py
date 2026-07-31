@@ -67,6 +67,14 @@ _LIVE_SCORING_PATTERN = re.compile(
     r"标准答案|答案是|答得.{0,3}(很好|不错|很差)|通过了?面试|面试.{0,4}失败)",
     re.IGNORECASE,
 )
+_QUESTION_MARK = re.compile(r"[?？]")
+# 追问偶尔会退化成「面试官把答案讲完」：没有问号 + 长篇大论。
+# 只卡这两个条件同时成立的情况——「请结合一个项目具体说明。」这类祈使式短追问必须放行。
+_ESSAY_REPLY_CHARS = 80
+_FOLLOW_UP_QUESTION_FALLBACK = "能再结合一个你自己经历过的具体例子说明一下吗？"
+# 扫描每 2s 一轮：连续 30 次拿不到锁 ≈ 一分钟没松手，正常作答轮次不会这么久。
+_MAINTENANCE_TIMEOUT_SECONDS = 5
+_MAINTENANCE_STUCK_STREAK = 30
 
 
 class MessageSink(Protocol):
@@ -178,6 +186,7 @@ class InterviewAgentService:
         self._question_sink = question_sink
         self._clock = clock or (lambda: datetime.now(UTC))
         self._checkpointer = checkpointer or MemorySaver()
+        self._maintenance_timeouts: dict[int, int] = {}
         self._interview_graph = None
         if llm is not None:
             self._interview_graph = build_interview_graph(
@@ -328,21 +337,31 @@ class InterviewAgentService:
         async def maintain(session_id: int) -> None:
             async with semaphore:
                 try:
-                    async with asyncio.timeout(5):
+                    async with asyncio.timeout(_MAINTENANCE_TIMEOUT_SECONDS):
                         await self._maintain_session(session_id)
+                    self._maintenance_timeouts.pop(session_id, None)
                 except TimeoutError:
-                    logger.warning(
+                    # 一次 LLM 轮次会占着会话锁十几秒，扫描每 2s 一轮，超时是常态而非故障。
+                    # 只有连续超时到明显不可能是「正在作答」时才算真的卡死。
+                    streak = self._maintenance_timeouts.get(session_id, 0) + 1
+                    self._maintenance_timeouts[session_id] = streak
+                    log = logger.warning if streak >= _MAINTENANCE_STUCK_STREAK else logger.debug
+                    log(
                         "interview maintenance timed out",
-                        extra={"session_id": session_id},
+                        extra={"session_id": session_id, "streak": streak},
                     )
                 except Exception:
                     logger.exception(
                         "interview maintenance failed", extra={"session_id": session_id}
                     )
 
-        await asyncio.gather(
-            *(maintain(session_id) for session_id in await self._store.session_ids())
-        )
+        session_ids = await self._store.session_ids()
+        self._maintenance_timeouts = {
+            session_id: streak
+            for session_id, streak in self._maintenance_timeouts.items()
+            if session_id in set(session_ids)
+        }
+        await asyncio.gather(*(maintain(session_id) for session_id in session_ids))
 
     async def _maintain_session(self, session_id: int) -> None:
         async with self._store.lock(session_id):
@@ -529,6 +548,16 @@ class InterviewAgentService:
             fallback = self._safe_fallback(decision.action)
             emitted.append(fallback)
             await self._emit_token_text(state, fallback, question)
+        elif decision.action in {AgentAction.FOLLOW_UP, AgentAction.HINT} and self._reads_as_answer(
+            "".join(emitted)
+        ):
+            # 模型偶尔会顺着上文替候选人把答案写完；已经流出去的收不回，至少补一个问题收口。
+            logger.warning(
+                "interviewer follow-up read as an answer, appending a question",
+                extra={"session_id": state.sessionId, "action": decision.action.value},
+            )
+            emitted.append(_FOLLOW_UP_QUESTION_FALLBACK)
+            await self._emit_token_text(state, _FOLLOW_UP_QUESTION_FALLBACK, question)
 
         await self._record_message(
             state,
@@ -536,6 +565,12 @@ class InterviewAgentService:
             content="".join(emitted),
             question=question,
         )
+
+    @staticmethod
+    def _reads_as_answer(reply: str) -> bool:
+        """长篇且不含问号的追问，基本就是模型自问自答了。"""
+
+        return len(reply) > _ESSAY_REPLY_CHARS and not _QUESTION_MARK.search(reply)
 
     @staticmethod
     def _safe_fallback(action: AgentAction) -> str:

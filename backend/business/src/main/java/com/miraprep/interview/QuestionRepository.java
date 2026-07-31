@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface QuestionRepository extends JpaRepository<Question, Long> {
+    List<Question> findBySessionIdIn(Collection<Long> sessionIds);
+
     long countBySessionId(Long sessionId);
 
     Optional<Question> findByIdAndSessionId(Long id, Long sessionId);

@@ -9,6 +9,7 @@ import com.miraprep.interview.dto.InterviewListResponse;
 import com.miraprep.interview.dto.InterviewMessagesResponse;
 import com.miraprep.interview.dto.InterviewStatusResponse;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,8 +33,10 @@ public class InterviewController {
 
     @PostMapping
     public ApiResponse<CreateInterviewResponse> create(
-            @Valid @RequestBody CreateInterviewRequest request, Authentication authentication) {
-        return ApiResponse.ok(interviewService.create(userId(authentication), request));
+            @Valid @RequestBody CreateInterviewRequest request,
+            Authentication authentication,
+            HttpServletRequest httpRequest) {
+        return ApiResponse.ok(interviewService.create(userId(authentication), httpRequest.getRemoteAddr(), request));
     }
 
     @GetMapping("/{id}/status")
