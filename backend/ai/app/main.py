@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, Response
 from app.clients.redis import get_redis
 from app.config import get_settings
 from app.logging import configure_logging, request_id_context
-from app.routers import health, internal, interview_stream
+from app.routers import health, internal, interview_stream, interview_ws
 from app.services.interview_agent import build_interview_event_stream_service
 
 configure_logging()
@@ -80,6 +80,7 @@ app.include_router(health.router)
 app.include_router(internal.router)
 app.include_router(interview_stream.internal_router)
 app.include_router(interview_stream.router)
+app.include_router(interview_ws.router)
 
 
 @app.middleware("http")

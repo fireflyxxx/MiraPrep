@@ -1,0 +1,30 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	route {
+		@internal path /internal /internal/* /api/v1/internal /api/v1/internal/*
+		respond @internal 404
+
+		@business path /api/*
+		reverse_proxy @business business:8080
+
+		@ai path /interviews/* /ws/interview/*
+		reverse_proxy @ai ai:8000 {
+			flush_interval -1
+			transport http {
+				read_timeout 90m
+			}
+		}
+
+		reverse_proxy frontend:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-X-Powered-By
+	}
+}

@@ -1,4 +1,5 @@
 from functools import lru_cache
+from urllib.parse import quote
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -20,8 +21,16 @@ class Settings(BaseSettings):
     internal_token: SecretStr
     redis_host: str = "localhost"
     redis_port: int = 6379
+    redis_password: SecretStr | None = None
     asr_provider: str = "not-configured"
     tts_provider: str = "not-configured"
+    deepgram_api_key: SecretStr | None = None
+    deepgram_asr_model: str = "nova-3"
+    deepgram_asr_language: str = "zh-CN"
+    openai_api_key: SecretStr | None = None
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_tts_model: str = "gpt-4o-mini-tts"
+    openai_tts_voice: str = "cedar"
     cors_origins: str = "http://localhost:3000"
 
     @property
@@ -34,6 +43,12 @@ class Settings(BaseSettings):
     @property
     def resolved_grading_model(self) -> str:
         return self.anthropic_grading_model or self.anthropic_model
+
+    @property
+    def redis_url(self) -> str:
+        password = self.redis_password.get_secret_value() if self.redis_password else ""
+        credentials = f":{quote(password, safe='')}@" if password else ""
+        return f"redis://{credentials}{self.redis_host}:{self.redis_port}"
 
 
 @lru_cache

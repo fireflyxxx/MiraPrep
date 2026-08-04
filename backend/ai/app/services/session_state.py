@@ -28,9 +28,8 @@ def get_interview_checkpointer() -> AsyncRedisSaver:
 
 
 def build_redis_checkpointer(settings: Settings) -> AsyncRedisSaver:
-    redis_url = f"redis://{settings.redis_host}:{settings.redis_port}"
     return AsyncRedisSaver(
-        redis_url=redis_url,
+        redis_url=settings.redis_url,
         ttl={"default_ttl": 240, "refresh_on_read": True},
     )
 

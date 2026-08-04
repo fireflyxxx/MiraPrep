@@ -60,6 +60,14 @@ class ConversationMessage(BaseModel):
     questionId: str | int | None = None
 
 
+class PendingAudioFrame(BaseModel):
+    """Audio retained until the ASR provider commits a final transcript."""
+
+    audioSeq: int = Field(gt=0)
+    chunk: str = Field(min_length=1, max_length=180_000)
+    format: str = Field(min_length=1)
+
+
 class InterviewSessionState(BaseModel):
     sessionId: int = Field(gt=0)
     durationMin: Literal[15, 30, 45]
@@ -74,6 +82,12 @@ class InterviewSessionState(BaseModel):
     followUpCount: int = Field(default=0, ge=0, le=3)
     messageSeq: int = Field(default=0, ge=0)
     processedAnswerIds: list[str] = Field(default_factory=list)
+    voiceEnabled: bool = False
+    spokenMessageSeqs: list[int] = Field(default_factory=list)
+    lastAudioSeq: int = Field(default=0, ge=0)
+    asrDraftText: str = ""
+    pendingAudioFrames: list[PendingAudioFrame] = Field(default_factory=list)
+    pendingAudioBytes: int = Field(default=0, ge=0)
     pendingMessageDeliveries: list[dict[str, Any]] = Field(default_factory=list)
     messageDeliveryAttempts: int = Field(default=0, ge=0)
     messageDeliveryNextAttemptAt: datetime | None = None
@@ -94,7 +108,7 @@ class InterviewSessionState(BaseModel):
 
 
 class InterviewEvent(BaseModel):
-    type: Literal["token", "phase_change", "interview_end", "error"]
+    type: Literal["token", "audio", "asr_partial", "phase_change", "interview_end", "error"]
     payload: dict[str, Any]
     seq: int = Field(gt=0)
 

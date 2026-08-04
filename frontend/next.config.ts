@@ -23,6 +23,7 @@ const developmentConnectSource =
   process.env.NODE_ENV === "development" ? " ws:" : "";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   poweredByHeader: false,
   experimental: {
     viewTransition: true,

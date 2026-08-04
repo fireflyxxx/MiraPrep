@@ -42,6 +42,16 @@ def test_settings_default_to_deepseek_v4_flash(monkeypatch: pytest.MonkeyPatch) 
     assert settings.anthropic_base_url == "https://api.deepseek.com/anthropic"
 
 
+def test_settings_builds_an_encoded_authenticated_redis_url() -> None:
+    settings = Settings(
+        redis_host="redis.internal",
+        redis_port=6380,
+        redis_password="p@ss:/word",
+    )
+
+    assert settings.redis_url == "redis://:p%40ss%3A%2Fword@redis.internal:6380"
+
+
 def test_grading_model_uses_flash_primary_when_not_explicitly_configured() -> None:
     settings = Settings(
         anthropic_model="deepseek-v4-flash",
