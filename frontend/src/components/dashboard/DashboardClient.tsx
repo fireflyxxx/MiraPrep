@@ -5,6 +5,12 @@ import Link from "next/link";
 import DashboardResumeSection from "@/components/resume/DashboardResumeSection";
 import { useMeQuery } from "@/lib/api/auth";
 import { useOverviewStats, type StatsOverview } from "@/lib/api/stats";
+import {
+  CountUp,
+  MotionCard,
+  Stagger,
+  StaggerItem,
+} from "@/lib/motion/primitives";
 
 const subscribeToBrowser = () => () => {};
 
@@ -77,17 +83,20 @@ function StatsCards({ stats }: { stats: StatsOverview }) {
   const empty = stats.totalInterviews === 0;
 
   return (
-    <div className="grid min-h-[256px] grid-rows-2 gap-4">
-      <div className="mira-surface flex flex-col justify-between rounded-[20px] border border-border-subtle bg-surface p-[22px]">
+    <Stagger className="grid min-h-[256px] grid-rows-2 gap-4">
+      <StaggerItem>
+      <MotionCard className="mira-surface flex h-full flex-col justify-between rounded-[20px] border border-border-subtle bg-surface p-[22px]">
         <div className="text-[13px] text-muted-foreground">累计面试</div>
         <div className="flex items-baseline gap-2">
           <span className="font-display text-[34px] font-bold tabular-nums">
-            {stats.totalInterviews}
+            <CountUp value={stats.totalInterviews} />
           </span>
           <span className="text-[13px] text-muted-foreground">场</span>
         </div>
-      </div>
-      <div className="mira-surface flex flex-col justify-between rounded-[20px] border border-border-subtle bg-surface p-[22px]">
+      </MotionCard>
+      </StaggerItem>
+      <StaggerItem>
+      <MotionCard className="mira-surface flex h-full flex-col justify-between rounded-[20px] border border-border-subtle bg-surface p-[22px]">
         <div className="text-[13px] text-muted-foreground">最高评级</div>
         {empty || !stats.highestGrade ? (
           <p className="m-0 max-w-[230px] text-[13px] leading-5 text-muted-foreground">
@@ -101,8 +110,9 @@ function StatsCards({ stats }: { stats: StatsOverview }) {
             <span className="text-[13px] text-muted-foreground">历史最佳</span>
           </div>
         )}
-      </div>
-    </div>
+      </MotionCard>
+      </StaggerItem>
+    </Stagger>
   );
 }
 
