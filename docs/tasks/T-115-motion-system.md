@@ -33,3 +33,15 @@ PRD §4.5 要求统一动效规范（时长/缓动/清单）。项目已有 CSS 
 PR 贴：原语 demo、reduced-motion 前后对比、集成页面截图。
 
 ## 遗留/发现
+
+**2026-08-05 验收**：四条验收标准通过；`lint` / `build` / 158 个前端用例全绿。
+
+- 修复：`CountUp` 混用了 `performance.now()` 与 rAF 回调时间戳，两者时钟一旦不同源
+  就会算出负进度，把数字甩到目标值之外（在测试环境里稳定复现，值跳到 -826430）。
+  改成以第一帧时间戳为起点。
+- 修复：后台标签页里 rAF 一帧都不调度，动画停在 0 上——评级页真实浏览器里显示成
+  「本次得分 0 / 100」。现在无法动画时直接显示真实数字。
+- 补测：`primitives.test.tsx` 覆盖非 reduced-motion 分支（此前全局 setup 把所有用例
+  钉在 reduced-motion 上，真正会动的那条路径零覆盖）。
+- 说明：`FadeIn` / `SlideUp` 原语目前无调用点，`Stagger`/`StaggerItem`/`MotionCard`/
+  `CountUp` 已在工作台与评级页落地。

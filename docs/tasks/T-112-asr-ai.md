@@ -36,3 +36,16 @@
 PR 贴：用测试音频/脚本推流的转写事件序列、端到端「语音→回答→面试官续问」证据。
 
 ## 遗留/发现
+
+**2026-08-05 验收**：四条验收标准均已跨进程验证（本机 FastAPI + 桩 Deepgram，见下）。
+时序：`asr_partial` interim 连续回显 → `audio_end` → `isFinal` 转写 → `asr_confirm` →
+面试官续问，最终转写延迟 47ms（目标 < 800ms）。断线重连按 `audioSeq` 续传、重复帧
+去重、序号断层回退均有单测覆盖，前端游标逻辑补了 `interview-ws.test.ts`。
+
+- 修复：provider 未配置 / 鉴权失败时 `websocket.close()` 发生在握手完成前，浏览器只
+  收到 HTTP 403、拿不到关闭码，前端的 1013/4403 分支实际上是死代码。现在先 `accept()`
+  再带码关闭，浏览器已能显示「语音服务尚未配置」。
+- 新增 `DEEPGRAM_ASR_ENDPOINT` 配置（对齐已有的 `OPENAI_BASE_URL`），自建/区域端点和
+  联调不用再改代码。
+- **未覆盖**：真实 Deepgram 账号下的转写质量与延迟。本机没有 `DEEPGRAM_API_KEY`，
+  上线前需用真实 key 复测一次延迟指标。

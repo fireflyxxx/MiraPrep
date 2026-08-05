@@ -428,10 +428,39 @@ def test_websocket_closes_with_retryable_code_when_provider_is_not_configured(
         ),
     )
 
-    with pytest.raises(WebSocketDisconnect) as closed:
-        with TestClient(app).websocket_connect(
-            "/ws/interview/40?accessToken=test-runtime-token-40-at-least-32-chars"
-        ):
-            pass
+    # Entering the context must succeed: a close sent before the handshake completes
+    # reaches a browser as a plain HTTP 403 with no close code, so the client can only
+    # report a generic failure instead of "speech provider is not configured".
+    with TestClient(app).websocket_connect(
+        "/ws/interview/40?accessToken=test-runtime-token-40-at-least-32-chars"
+    ) as websocket:
+        with pytest.raises(WebSocketDisconnect) as closed:
+            websocket.receive_json()
 
     assert closed.value.code == 1013
+
+
+def test_websocket_rejects_unauthorized_session_after_completing_the_handshake(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = InMemorySessionStateStore()
+    asyncio.run(store.create(make_state()))
+    agent = FakeAgent(store)
+
+    async def deny(_session_id: int, _access_token: str) -> None:
+        raise PermissionError("bad runtime token")
+
+    agent.authorize = deny  # type: ignore[method-assign]
+    monkeypatch.setattr(
+        interview_ws,
+        "build_voice_runtime",
+        lambda: VoiceInterviewRuntime(store=store, agent=agent, asr=FakeAsrProvider()),
+    )
+
+    with TestClient(app).websocket_connect(
+        "/ws/interview/40?accessToken=test-runtime-token-40-at-least-32-chars"
+    ) as websocket:
+        with pytest.raises(WebSocketDisconnect) as closed:
+            websocket.receive_json()
+
+    assert closed.value.code == 4403

@@ -18,6 +18,7 @@ def build_asr_provider(settings: Settings) -> AsrProvider:
             api_key=settings.deepgram_api_key.get_secret_value(),
             model=settings.deepgram_asr_model,
             language=settings.deepgram_asr_language,
+            endpoint=settings.deepgram_asr_endpoint,
         )
     raise SpeechProviderConfigurationError(f"unsupported ASR_PROVIDER: {settings.asr_provider}")
 

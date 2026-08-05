@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     deepgram_api_key: SecretStr | None = None
     deepgram_asr_model: str = "nova-3"
     deepgram_asr_language: str = "zh-CN"
+    deepgram_asr_endpoint: str = "wss://api.deepgram.com/v1/listen"
     openai_api_key: SecretStr | None = None
     openai_base_url: str = "https://api.openai.com/v1"
     openai_tts_model: str = "gpt-4o-mini-tts"

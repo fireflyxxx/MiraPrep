@@ -4,9 +4,12 @@ import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import InterviewClient from "./InterviewClient";
 import type { InterviewStreamEvent } from "@/lib/api/interview-stream";
-import type {
-  VoiceInterviewEvent,
-  VoiceInterviewSocket,
+import {
+  getInterviewVoicePreference,
+  storeInterviewVoicePreference,
+  VoiceSocketCloseError,
+  type VoiceInterviewEvent,
+  type VoiceInterviewSocket,
 } from "@/lib/api/interview-ws";
 
 const push = vi.fn();
@@ -654,6 +657,55 @@ describe("InterviewClient runtime", () => {
       expect.objectContaining({ text: "我负责了核心模块", questionId: 11 }),
     );
     expect(submitInterviewAnswer).not.toHaveBeenCalled();
+  });
+
+  it("enters voice mode when the setup wizard asked for a voice interview", async () => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: vi.fn() },
+    });
+    Object.defineProperty(globalThis, "AudioContext", {
+      configurable: true,
+      value: class {
+        resume = vi.fn().mockResolvedValue(undefined);
+        close = vi.fn().mockResolvedValue(undefined);
+      },
+    });
+    storeInterviewVoicePreference(42, true);
+
+    render(<InterviewClient sessionId="42" />);
+    await screen.findByText("请先介绍一下自己。");
+
+    await waitFor(() => expect(streamVoiceInterview).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "语音回答" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(streamInterview).not.toHaveBeenCalled();
+  });
+
+  it("stops honouring the voice preference once the voice link is refused", async () => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: vi.fn() },
+    });
+    Object.defineProperty(globalThis, "AudioContext", {
+      configurable: true,
+      value: class {
+        resume = vi.fn().mockResolvedValue(undefined);
+        close = vi.fn().mockResolvedValue(undefined);
+      },
+    });
+    storeInterviewVoicePreference(42, true);
+    streamVoiceInterview.mockRejectedValue(
+      new VoiceSocketCloseError("speech provider is not configured", 1013, false),
+    );
+
+    render(<InterviewClient sessionId="42" />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("语音服务尚未配置");
+    // 偏好留着的话，刷新后又会被推回同一个连不上的语音链路。
+    expect(getInterviewVoicePreference(42)).toBe(false);
   });
 
   it("syncs the interviewer breathing state with TTS playback", async () => {

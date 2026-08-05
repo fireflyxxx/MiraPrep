@@ -56,6 +56,7 @@ class ProductionReleaseContractTest(unittest.TestCase):
             "DEEPGRAM_API_KEY",
             "DEEPGRAM_ASR_MODEL",
             "DEEPGRAM_ASR_LANGUAGE",
+            "DEEPGRAM_ASR_ENDPOINT",
             "TTS_PROVIDER",
             "OPENAI_API_KEY",
             "OPENAI_BASE_URL",
