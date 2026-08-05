@@ -36,6 +36,7 @@ from app.prompts.resume_parse import (
     ERROR_UNSUPPORTED_MIME,
     SYSTEM_PROMPT,
 )
+from app.prompts.security import sanitize_untrusted_text
 from app.schemas.resume import ParsedResume
 
 logger = logging.getLogger("miraprep.ai.resume_parse")
@@ -132,7 +133,7 @@ class ResumeParseService:
                 return
 
             # 3. LLM 结构化抽取
-            truncated = text[:MAX_TEXT_CHARS]
+            truncated = sanitize_untrusted_text(text, max_chars=MAX_TEXT_CHARS)
             try:
                 parsed = await build_resume_chain(self._llm).ainvoke({"resume_text": truncated})
             except OutputParserException:

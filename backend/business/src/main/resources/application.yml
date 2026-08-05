@@ -13,6 +13,22 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:true}
+          connectiontimeout: ${MAIL_SMTP_CONNECTION_TIMEOUT:5000}
+          timeout: ${MAIL_SMTP_READ_TIMEOUT:5000}
+          writetimeout: ${MAIL_SMTP_WRITE_TIMEOUT:5000}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:true}
+            required: ${MAIL_SMTP_STARTTLS:true}
   jpa:
     open-in-view: false
     hibernate:
@@ -22,6 +38,7 @@ spring:
 
 server:
   port: 8080
+  forward-headers-strategy: framework
 
 app:
   cors:
@@ -38,6 +55,9 @@ app:
   resume:
     upload-window: ${RESUME_UPLOAD_WINDOW:3600}
     upload-max-attempts: ${RESUME_UPLOAD_MAX_ATTEMPTS:10}
+  interview:
+    create-window: ${INTERVIEW_CREATE_WINDOW:3600}
+    create-max-attempts: ${INTERVIEW_CREATE_MAX_ATTEMPTS:20}
   auth:
     jwt-secret: ${JWT_SECRET:local-development-secret-must-be-replaced-in-production-12345}
     access-ttl: ${JWT_ACCESS_TTL:900}
@@ -47,6 +67,12 @@ app:
       resend-ttl: ${VERIFICATION_CODE_RESEND_TTL:60}
       max-attempts: ${VERIFICATION_CODE_MAX_ATTEMPTS:5}
       fixed-code: ${VERIFICATION_FIXED_CODE:}
+      send-window: ${VERIFICATION_SEND_WINDOW:3600}
+      send-ip-max-attempts: ${VERIFICATION_SEND_IP_MAX_ATTEMPTS:20}
+      send-recipient-max-attempts: ${VERIFICATION_SEND_RECIPIENT_MAX_ATTEMPTS:5}
+      send-global-max-attempts: ${VERIFICATION_SEND_GLOBAL_MAX_ATTEMPTS:1000}
+      mail-mode: ${MAIL_MODE:console}
+      mail-from: ${MAIL_FROM:MiraPrep <no-reply@localhost>}
     login-window: ${LOGIN_RATE_LIMIT_WINDOW:60}
     login-max-attempts: ${LOGIN_RATE_LIMIT_MAX_ATTEMPTS:5}
     token-store: ${AUTH_TOKEN_STORE:redis}

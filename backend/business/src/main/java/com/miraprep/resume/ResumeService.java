@@ -53,11 +53,11 @@ public class ResumeService {
         this.uploadMaxAttempts = uploadMaxAttempts;
     }
 
-    public ResumeSummaryResponse upload(Long userId, MultipartFile file) {
+    public ResumeSummaryResponse upload(Long userId, String clientIp, MultipartFile file) {
         String extension = validateFile(file);
-        String rateLimitKey = "resume:upload:" + userId;
+        String rateLimitKey = "resume:upload:" + clientIp + ':' + userId;
         if (!rateLimiter.tryAcquire(rateLimitKey, uploadMaxAttempts, uploadWindow)) {
-            throw new BusinessException(ErrorCode.UPLOAD_RATE_LIMITED);
+            throw new BusinessException(ErrorCode.RATE_LIMITED);
         }
         String objectKey = "resumes/%d/%s.%s".formatted(userId, UUID.randomUUID(), extension);
         boolean stored = false;

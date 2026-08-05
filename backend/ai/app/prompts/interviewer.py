@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
+
+from app.prompts.security import sanitize_untrusted_text, serialize_untrusted
 
 INTERVIEWER_SYSTEM_PROMPT = """你是 MiraPrep 的专业面试官。
 你必须遵守：
@@ -40,10 +41,10 @@ def build_decision_prompt(
         "根据当前题目和回答选择下一动作。高压型可提高追问概率，温和型优先提示；"
         "答非所问用 REDIRECT，反问题目用 CLARIFY，不当内容用 TERMINATE。\n"
         "<<<UNTRUSTED_INTERVIEW_CONTEXT_BEGIN>>>\n"
-        f"{json.dumps(context, ensure_ascii=False)}\n"
+        f"{serialize_untrusted(context)}\n"
         "<<<UNTRUSTED_INTERVIEW_CONTEXT_END>>>\n"
         "<<<UNTRUSTED_CANDIDATE_ANSWER_BEGIN>>>\n"
-        f"{answer}\n"
+        f"{sanitize_untrusted_text(answer)}\n"
         "<<<UNTRUSTED_CANDIDATE_ANSWER_END>>>\n"
         "只返回 JSON。"
     )
@@ -64,9 +65,17 @@ def build_reply_prompt(
         "action": action,
         "responseInstruction": response_instruction,
     }
+    # FOLLOW_UP / HINT 是「继续问」，模型很容易顺着上文替候选人把答案讲完，必须显式禁止。
+    constraint = (
+        "回复必须是向候选人提出的一个问题，以问号结尾；"
+        "只提问，不要给出你自己的答案、方案或结论。\n"
+        if action in {"FOLLOW_UP", "HINT"}
+        else ""
+    )
     return (
         "生成一句简洁的面试官回复，服从系统规则，不现场评价。\n"
+        f"{constraint}"
         "<<<UNTRUSTED_INTERVIEW_CONTEXT_BEGIN>>>\n"
-        f"{json.dumps(data, ensure_ascii=False)}\n"
+        f"{serialize_untrusted(data)}\n"
         "<<<UNTRUSTED_INTERVIEW_CONTEXT_END>>>"
     )

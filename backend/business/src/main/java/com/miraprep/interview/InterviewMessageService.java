@@ -11,6 +11,7 @@ import com.miraprep.domain.Question;
 import com.miraprep.interview.dto.InterviewMessageResponse;
 import com.miraprep.interview.dto.InterviewMessagesResponse;
 import com.miraprep.interview.dto.WriteInterviewMessageRequest;
+import com.miraprep.resume.PrivateObjectAccessService;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -22,14 +23,17 @@ public class InterviewMessageService {
     private final InterviewSessionRepository interviewSessionRepository;
     private final InterviewMessageRepository interviewMessageRepository;
     private final QuestionRepository questionRepository;
+    private final PrivateObjectAccessService privateObjectAccessService;
 
     public InterviewMessageService(
             InterviewSessionRepository interviewSessionRepository,
             InterviewMessageRepository interviewMessageRepository,
-            QuestionRepository questionRepository) {
+            QuestionRepository questionRepository,
+            PrivateObjectAccessService privateObjectAccessService) {
         this.interviewSessionRepository = interviewSessionRepository;
         this.interviewMessageRepository = interviewMessageRepository;
         this.questionRepository = questionRepository;
+        this.privateObjectAccessService = privateObjectAccessService;
     }
 
     @Transactional
@@ -61,7 +65,12 @@ public class InterviewMessageService {
         message.setContent(request.content().trim());
         message.setPhase(enumValue(InterviewPhase.class, request.phase()));
         message.setQuestion(question);
-        message.setAudioUrl(optionalText(request.audioUrl()));
+        String audioObjectKey = optionalText(request.audioUrl());
+        if (audioObjectKey != null) {
+            audioObjectKey = privateObjectAccessService.requireOwnedAudioObjectKey(
+                    session.getUser().getId(), session.getId(), audioObjectKey);
+        }
+        message.setAudioUrl(audioObjectKey);
         message.setSeq(request.seq());
         InterviewMessage saved = interviewMessageRepository.saveAndFlush(message);
 
@@ -96,7 +105,10 @@ public class InterviewMessageService {
                 message.getContent(),
                 lower(message.getPhase()),
                 message.getQuestion() == null ? null : message.getQuestion().getId(),
-                message.getAudioUrl(),
+                privateObjectAccessService.signedAudioUrl(
+                        message.getSession().getUser().getId(),
+                        message.getSession().getId(),
+                        message.getAudioUrl()),
                 message.getSeq(),
                 message.getCreatedAt());
     }

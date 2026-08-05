@@ -163,6 +163,58 @@ describe("interview runtime API", () => {
     ]);
   });
 
+  it("reports the connection as open before any event arrives", async () => {
+    // 刷新后重连常常长时间没有新事件，靠首个事件判连接会让状态一直卡在「正在连接」。
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        setTimeout(() => controller.close(), 0);
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(body, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
+      ),
+    );
+    const onOpen = vi.fn();
+    const onEvent = vi.fn();
+
+    await streamInterview({
+      sessionId: 42,
+      runtimeToken: "runtime-token",
+      afterSeq: 7,
+      signal: new AbortController().signal,
+      onEvent,
+      onOpen,
+    });
+
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
+  it("does not report an open connection when the stream handshake fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("nope", { status: 503 })),
+    );
+    const onOpen = vi.fn();
+
+    await expect(
+      streamInterview({
+        sessionId: 42,
+        runtimeToken: "runtime-token",
+        afterSeq: 7,
+        signal: new AbortController().signal,
+        onEvent: vi.fn(),
+        onOpen,
+      }),
+    ).rejects.toThrow();
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
   it("rejects a token envelope whose text field is missing", async () => {
     const body = new ReadableStream<Uint8Array>({
       start(controller) {

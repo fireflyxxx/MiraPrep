@@ -78,16 +78,30 @@ function ReportSkeleton() {
   );
 }
 
+function ReportGenerating() {
+  return (
+    <main className="mx-auto flex min-h-[620px] max-w-lg items-center px-6 text-center">
+      <div className="w-full rounded-2xl border border-border bg-surface p-8" role="status">
+        <div className="mx-auto mb-5 h-10 w-10 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
+        <h1 className="mb-2 text-2xl font-semibold">报告正在生成</h1>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          AI 正在逐题批改并汇总五维表现，通常需要几分钟。完成后报告会自动出现，无需反复刷新。
+        </p>
+      </div>
+    </main>
+  );
+}
+
 export default function ReportClient({ sessionId }: { sessionId: string }) {
   const [expanded, setExpanded] = useState(false);
-  const { data, isPending, isError, refetch } = useReport(sessionId);
+  const { data, status, isPending, isError, refetch } = useReport(sessionId);
   const { data: overview } = useOverviewStats();
 
   if (isPending) {
     return (
       <div className="min-h-screen bg-surface-subtle">
         <ReportHeader />
-        <ReportSkeleton />
+        {status === "grading" ? <ReportGenerating /> : <ReportSkeleton />}
       </div>
     );
   }
@@ -98,9 +112,13 @@ export default function ReportClient({ sessionId }: { sessionId: string }) {
         <ReportHeader />
         <main className="mx-auto flex min-h-[620px] max-w-lg items-center px-6 text-center">
           <div className="w-full rounded-2xl border border-border bg-surface p-8">
-            <h1 className="mb-2 text-2xl font-semibold">暂时无法加载报告</h1>
+            <h1 className="mb-2 text-2xl font-semibold">
+              {status === "failed" ? "报告生成失败" : "暂时无法加载报告"}
+            </h1>
             <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
-              报告可能还在生成，或者网络刚刚开了小差。你可以稍后再试。
+              {status === "failed"
+                ? "本次批改未能完成，请重新加载；若仍然失败，请稍后再试。"
+                : "暂时无法确认报告状态，请检查网络后重试。"}
             </p>
             <button
               type="button"

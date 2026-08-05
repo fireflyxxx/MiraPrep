@@ -3,7 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "./client";
 import { endpoints } from "./endpoints";
-import { ApiError } from "./types";
 import type { DimensionScores, Grade } from "./stats";
 
 export interface ReportConfig {
@@ -58,24 +57,54 @@ export interface InterviewReport {
   questions: ReportQuestion[];
 }
 
+export type ReportStatus = "none" | "grading" | "ready" | "failed";
+
+interface ReportStatusResponse {
+  status: ReportStatus;
+}
+
 export const reportKey = (sessionId: string) => ["reports", sessionId] as const;
+export const reportStatusKey = (sessionId: string) =>
+  ["reports", sessionId, "status"] as const;
 
 /** 评级页和完整报告页共享同一缓存，来回跳转时不会重复闪烁加载态。 */
 export function useReport(sessionId: string) {
-  return useQuery({
+  const statusQuery = useQuery({
+    queryKey: reportStatusKey(sessionId),
+    queryFn: () =>
+      apiClient<ReportStatusResponse>(
+        endpoints.reportStatus(encodeURIComponent(sessionId)),
+      ),
+    enabled: sessionId.length > 0,
+    refetchInterval: (query) =>
+      query.state.data?.status === "grading" ? 2_000 : false,
+  });
+  const status = statusQuery.data?.status;
+  const reportQuery = useQuery({
     queryKey: reportKey(sessionId),
     queryFn: () =>
       apiClient<InterviewReport>(endpoints.report(encodeURIComponent(sessionId))),
-    enabled: sessionId.length > 0,
-    retry: (failureCount, error) => {
-      if (error instanceof ApiError && error.status === 404) {
-        return failureCount < 90;
-      }
-      return !(error instanceof ApiError) && failureCount < 2;
-    },
-    retryDelay: (attemptIndex, error) =>
-      error instanceof ApiError && error.status === 404
-        ? 2_000
-        : Math.min(1_000 * 2 ** attemptIndex, 10_000),
+    enabled: sessionId.length > 0 && status === "ready",
   });
+
+  const terminalStatusError = status === "none" || status === "failed";
+  return {
+    data: reportQuery.data,
+    status,
+    isPending:
+      statusQuery.isPending ||
+      status === "grading" ||
+      (status === "ready" && reportQuery.isPending),
+    isError: statusQuery.isError || reportQuery.isError || terminalStatusError,
+    error:
+      statusQuery.error ??
+      reportQuery.error ??
+      (terminalStatusError ? new Error(status === "failed" ? "报告生成失败" : "报告尚未开始生成") : null),
+    refetch: async () => {
+      const refreshedStatus = await statusQuery.refetch();
+      if (refreshedStatus.data?.status === "ready") {
+        await reportQuery.refetch();
+      }
+    },
+  };
 }

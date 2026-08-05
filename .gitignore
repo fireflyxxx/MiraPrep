@@ -1,7 +1,9 @@
 # Local credentials and machine-specific endpoint overrides
 **/.env
 **/.env.local
+**/.env.prod
 !**/.env.example
+!**/.env.prod.example
 
 # Agent-managed isolated worktrees
 .worktrees/
@@ -25,3 +27,5 @@
 
 # 本地验收产物（截图等）
 output/
+.playwright-cli/
+infra/backups/

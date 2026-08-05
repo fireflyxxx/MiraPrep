@@ -27,6 +27,7 @@ export const endpoints = {
   interviews: "/interviews",
   overviewStats: "/stats/overview",
   report: (sessionId: string) => `/reports/${sessionId}`,
+  reportStatus: (sessionId: string) => `/reports/${sessionId}/status`,
 } as const;
 
 export function toApiUrl(path: string): string {

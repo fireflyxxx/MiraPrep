@@ -7,3 +7,7 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
   internal-token: ${AI_INTERNAL_TOKEN}
+  auth:
+    verification:
+      mail-mode: ${MAIL_MODE:smtp}
+      mail-from: ${MAIL_FROM}

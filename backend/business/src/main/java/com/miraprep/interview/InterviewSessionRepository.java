@@ -14,6 +14,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface InterviewSessionRepository extends JpaRepository<InterviewSession, Long> {
+    List<InterviewSession> findByUserId(Long userId);
+
     Optional<InterviewSession> findByIdAndDeletedFalse(Long id);
 
     Page<InterviewSession> findByUserIdAndDeletedFalse(Long userId, Pageable pageable);

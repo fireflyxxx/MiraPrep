@@ -110,6 +110,19 @@ function response(body = report, ok = true) {
   );
 }
 
+function statusResponse(status: "none" | "grading" | "ready" | "failed" = "ready") {
+  return new Response(
+    JSON.stringify({ code: 0, message: "ok", data: { status } }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
+function reportFetch(body = report, ok = true) {
+  return vi.fn(async (input: RequestInfo | URL) =>
+    String(input).endsWith("/status") ? statusResponse() : response(body, ok),
+  );
+}
+
 function renderReport() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -123,7 +136,7 @@ function renderReport() {
 
 describe("ReportClient", () => {
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response()));
+    vi.stubGlobal("fetch", reportFetch());
   });
 
   it("renders the real report, history comparison, partial label and full review details", async () => {
@@ -133,6 +146,10 @@ describe("ReportClient", () => {
     expect(await screen.findByRole("heading", { name: "前端工程师 面试报告" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "http://localhost:8080/api/v1/reports/108",
+      expect.objectContaining({ credentials: "include" }),
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:8080/api/v1/reports/108/status",
       expect.objectContaining({ credentials: "include" }),
     );
     expect(screen.getByText("部分完成")).toBeInTheDocument();
@@ -164,24 +181,40 @@ describe("ReportClient", () => {
     expect(screen.getByLabelText("报告加载中")).toBeInTheDocument();
   });
 
+  it("shows a durable generating state without requesting missing report data", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(statusResponse("grading"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderReport();
+
+    expect(await screen.findByText("报告正在生成")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/reports\/108\/status$/);
+  });
+
   it("shows a friendly error and can retry", async () => {
     const user = userEvent.setup();
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(response(report, false))
-      .mockResolvedValueOnce(response());
+    let reportCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).endsWith("/status")) return statusResponse();
+        reportCalls += 1;
+        return reportCalls === 1 ? response(report, false) : response();
+      }),
+    );
 
     renderReport();
 
     expect(await screen.findByText("暂时无法加载报告")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "重新加载" }));
     expect(await screen.findByRole("heading", { name: "前端工程师 面试报告" })).toBeInTheDocument();
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(reportCalls).toBe(2);
   });
 
   it("renders repeated historical focus points without duplicate React keys", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.mocked(fetch).mockResolvedValueOnce(
-      response({
+    vi.stubGlobal("fetch", reportFetch({
         ...report,
         questions: [
           {
@@ -189,8 +222,7 @@ describe("ReportClient", () => {
             focusPoints: ["缓存", "缓存"],
           },
         ],
-      }),
-    );
+      }));
 
     renderReport();
     await screen.findByText("请说明 React Query 的缓存策略。");
@@ -204,8 +236,7 @@ describe("ReportClient", () => {
   });
 
   it("labels unanswered questions explicitly instead of claiming their time was lost", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(
-      response({
+    vi.stubGlobal("fetch", reportFetch({
         ...report,
         questions: [
           {
@@ -215,8 +246,7 @@ describe("ReportClient", () => {
             answerSeconds: null,
           },
         ],
-      }),
-    );
+      }));
 
     renderReport();
     await screen.findByText("请说明 React Query 的缓存策略。");

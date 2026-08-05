@@ -4,6 +4,10 @@ import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import InterviewClient from "./InterviewClient";
 import type { InterviewStreamEvent } from "@/lib/api/interview-stream";
+import type {
+  VoiceInterviewEvent,
+  VoiceInterviewSocket,
+} from "@/lib/api/interview-ws";
 
 const push = vi.fn();
 const router = { push };
@@ -14,6 +18,16 @@ const streamInterview = vi.fn();
 const getInterviewRuntimeToken = vi.fn(() => "runtime-token");
 const getInterviewEventCursor = vi.fn(() => 0);
 let emit: ((event: InterviewStreamEvent) => void) | undefined;
+let openConnection: (() => void) | undefined;
+const streamVoiceInterview = vi.fn();
+const voiceSocket: VoiceInterviewSocket = {
+  sendAudio: vi.fn(() => true),
+  finishAudio: vi.fn(() => true),
+  confirmTranscript: vi.fn(() => true),
+  setVoice: vi.fn(() => true),
+  close: vi.fn(),
+};
+let emitVoice: ((event: VoiceInterviewEvent) => void) | undefined;
 
 vi.mock("next/navigation", () => ({
   useRouter: () => router,
@@ -33,10 +47,31 @@ vi.mock("@/lib/api/interview-stream", async () => {
     endInterviewRuntime: (...args: unknown[]) => endInterviewRuntime(...args),
     streamInterview: (options: {
       onEvent: (event: InterviewStreamEvent) => void;
+      onOpen?: () => void;
       signal: AbortSignal;
     }) => {
       emit = options.onEvent;
+      openConnection = options.onOpen;
       return streamInterview(options);
+    },
+  };
+});
+
+vi.mock("@/lib/api/interview-ws", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api/interview-ws")>(
+    "@/lib/api/interview-ws",
+  );
+  return {
+    ...actual,
+    clearInterviewAudioCursor: vi.fn(),
+    streamVoiceInterview: (options: {
+      onEvent: (event: VoiceInterviewEvent) => void;
+      onOpen?: (socket: VoiceInterviewSocket) => void;
+      signal: AbortSignal;
+    }) => {
+      emitVoice = options.onEvent;
+      options.onOpen?.(voiceSocket);
+      return streamVoiceInterview(options);
     },
   };
 });
@@ -82,6 +117,17 @@ describe("InterviewClient runtime", () => {
     getInterviewRuntimeToken.mockClear();
     getInterviewEventCursor.mockClear();
     emit = undefined;
+    openConnection = undefined;
+    emitVoice = undefined;
+    streamVoiceInterview.mockReset().mockImplementation(
+      ({ signal }: { signal: AbortSignal }) =>
+        new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        }),
+    );
+    vi.mocked(voiceSocket.confirmTranscript).mockClear();
+    vi.mocked(voiceSocket.finishAudio).mockClear();
+    vi.mocked(voiceSocket.setVoice).mockClear();
   });
 
   it("does not read browser storage while rendering the SSR HTML", () => {
@@ -95,6 +141,10 @@ describe("InterviewClient runtime", () => {
     render(<InterviewClient sessionId="42" />);
 
     expect(await screen.findByText("请先介绍一下自己。")).toBeInTheDocument();
+    expect(screen.getByTestId("interview-shell")).toHaveAttribute(
+      "data-theme",
+      "interview-dark",
+    );
     expect(screen.getByText("我是小明。")).toBeInTheDocument();
     expect(
       screen.getByRole("region", { name: "当前面试交流" }),
@@ -102,6 +152,10 @@ describe("InterviewClient runtime", () => {
     expect(screen.getByTestId("floating-answer-composer")).toHaveClass(
       "absolute",
       "bottom-0",
+    );
+    expect(screen.getByTestId("floating-answer-composer")).toHaveAttribute(
+      "data-surface",
+      "dark",
     );
     expect(screen.getByTestId("floating-answer-composer")).not.toHaveClass(
       "border-t",
@@ -115,6 +169,19 @@ describe("InterviewClient runtime", () => {
         }),
       ),
     );
+  });
+
+  it("keeps the healthy connection state visually quiet", async () => {
+    render(<InterviewClient sessionId="42" />);
+    await waitFor(() => expect(openConnection).toBeTypeOf("function"));
+
+    act(() => openConnection?.());
+
+    const status = screen.getByRole("status", { name: "连接状态：会话在线" });
+    expect(status).toHaveAttribute("data-tone", "quiet");
+    expect(status).toHaveTextContent("会话在线");
+    expect(status).not.toHaveClass("rounded-full", "bg-emerald-50");
+    expect(screen.queryByText("实时连接正常")).not.toBeInTheDocument();
   });
 
   it("shows live total and current-question elapsed time from persisted timestamps", async () => {
@@ -233,6 +300,7 @@ describe("InterviewClient runtime", () => {
     const bar = await screen.findByRole("list", { name: /面试进度/ });
     expect(bar.querySelectorAll("li")).toHaveLength(1);
     expect(bar.parentElement).not.toHaveClass("border-b");
+    await waitFor(() => expect(streamInterview).toHaveBeenCalled());
 
     act(() => {
       emit?.({
@@ -516,6 +584,11 @@ describe("InterviewClient runtime", () => {
     render(<InterviewClient sessionId="42" />);
 
     await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);
     });
 
@@ -523,10 +596,124 @@ describe("InterviewClient runtime", () => {
     expect(
       screen.getByRole("button", { name: "重新连接" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "连接状态：连接断开" }),
+    ).toHaveAttribute("data-tone", "critical");
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);
     });
     expect(streamInterview).toHaveBeenCalledTimes(5);
+  });
+
+  it("switches to WebSocket voice mode, exposes editable ASR, and confirms it", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: vi.fn() },
+    });
+    Object.defineProperty(globalThis, "AudioContext", {
+      configurable: true,
+      value: class {
+        resume = vi.fn().mockResolvedValue(undefined);
+        close = vi.fn().mockResolvedValue(undefined);
+      },
+    });
+
+    render(<InterviewClient sessionId="42" />);
+    await screen.findByText("请先介绍一下自己。");
+    await user.click(screen.getByRole("button", { name: "语音回答" }));
+    await waitFor(() => expect(streamVoiceInterview).toHaveBeenCalled());
+
+    act(() => {
+      emitVoice?.({
+        type: "asr_partial",
+        payload: { text: "我负责核心模块", isFinal: true, acceptedAudioSeq: 3 },
+        seq: 8,
+      });
+    });
+
+    const editor = screen.getByPlaceholderText("转写内容会显示在这里，可编辑后提交");
+    expect(editor).toHaveValue("我负责核心模块");
+    await user.clear(editor);
+    await user.type(editor, "我负责了核心模块");
+
+    // 续录时服务端会为每个音频帧回一条带旧草稿的 ack，不能覆盖用户的编辑。
+    act(() => {
+      emitVoice?.({
+        type: "asr_partial",
+        payload: { text: "我负责核心模块", isFinal: false, acceptedAudioSeq: 4 },
+        seq: 9,
+      });
+    });
+    expect(editor).toHaveValue("我负责了核心模块");
+
+    await user.click(screen.getByRole("button", { name: "提交回答" }));
+
+    expect(voiceSocket.confirmTranscript).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "我负责了核心模块", questionId: 11 }),
+    );
+    expect(submitInterviewAnswer).not.toHaveBeenCalled();
+  });
+
+  it("syncs the interviewer breathing state with TTS playback", async () => {
+    const user = userEvent.setup();
+    let finishPlayback: (() => void) | undefined;
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: vi.fn() },
+    });
+    Object.defineProperty(globalThis, "AudioContext", {
+      configurable: true,
+      value: class {
+        destination = {};
+        resume = vi.fn().mockResolvedValue(undefined);
+        close = vi.fn().mockResolvedValue(undefined);
+        createBuffer = vi.fn(() => ({ getChannelData: () => new Float32Array(1) }));
+        createBufferSource = vi.fn(() => ({
+          connect: vi.fn(),
+          start: vi.fn(),
+          stop: vi.fn(),
+          set onended(callback: () => void) {
+            finishPlayback = callback;
+          },
+        }));
+      },
+    });
+
+    render(<InterviewClient sessionId="42" />);
+    await screen.findByText("请先介绍一下自己。");
+    await user.click(screen.getByRole("button", { name: "语音回答" }));
+    await waitFor(() => expect(streamVoiceInterview).toHaveBeenCalled());
+
+    act(() => {
+      emitVoice?.({
+        type: "audio",
+        payload: {
+          chunk: "AAA=",
+          format: "pcm16/24k",
+          forQuestionId: 11,
+          forMessageSeq: 7,
+          frameIndex: 1,
+          isFinal: false,
+          latencyMs: 20,
+        },
+        seq: 8,
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("interviewer-presence")).toHaveAttribute(
+        "data-speaking",
+        "true",
+      ),
+    );
+    act(() => finishPlayback?.());
+    await waitFor(() =>
+      expect(screen.getByTestId("interviewer-presence")).toHaveAttribute(
+        "data-speaking",
+        "false",
+      ),
+    );
   });
 });

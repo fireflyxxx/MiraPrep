@@ -12,7 +12,7 @@ from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from redis.exceptions import RedisError
 from redisvl.exceptions import RedisVLError
 
-from app.schemas.interview import AgentDecision, InterviewSessionState
+from app.schemas.interview import AgentDecision, InterviewSessionState, PendingAudioFrame
 from app.services.interview_graph import build_interview_graph
 from app.services.session_state import RedisSessionStateStore, ReplayGapError
 
@@ -64,13 +64,22 @@ async def test_redis_store_persists_state_and_assigns_atomic_event_sequences() -
             range(11, 21)
         )
         state.followUpCount = 2
+        state.pendingAudioFrames = [
+            PendingAudioFrame(
+                audioSeq=1,
+                chunk="cGVyc2lzdGVkLWF1ZGlv",
+                format="pcm16/16k",
+            )
+        ]
         combined = await store.append_event_and_save(
             state,
             "phase_change",
             {"from": "SELF_INTRO", "to": "RESUME_DEEP_DIVE"},
         )
         assert combined.seq == 21
-        assert (await store.get(session_id)).followUpCount == 2
+        reloaded = await store.get(session_id)
+        assert reloaded.followUpCount == 2
+        assert reloaded.pendingAudioFrames == state.pendingAudioFrames
 
         terminal = await store.finalize(state, "completed")
         assert terminal.seq == 22

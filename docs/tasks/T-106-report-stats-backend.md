@@ -45,6 +45,9 @@
   追问回答覆盖；查询会一次读取本场候选人消息并按题分组，避免逐题 N+1 查询。
   历史报告的五维 JSON 若缺键或类型错误，`dimensionScores` 降级为 `null` 并记录服务端
   warning，报告其余字段仍可读取，避免整份报告返回 500。
+- `GET /reports/{sessionId}/status`（需登录、校验归属）→
+  `{ "status": "none|grading|ready|failed" }`。会话存在但报告仍在批改时必须返回
+  `200 + grading`，只有会话本身不存在才返回 404；前端不得再用报告详情 404 猜测生成状态。
 - `GET /stats/overview`（需登录）→
   ```json
   {
@@ -87,6 +90,7 @@
 7. 中止会话收到 partial 成功回调后仍保持 `aborted`；非 partial 缺少已回答题目评审时
    返回 400。
 8. 历史脏五维数据不会阻断报告查询，响应中的 `dimensionScores` 为 `null`。
+9. 报告状态接口能区分 none/grading/ready/failed，生成中不返回 404，且执行归属校验。
 
 ## 验证方式
 PR 贴：grade-result/grade-failed 回调 + 报告查询 + 统计 curl 与输出、乱序回调/聚合测试、非本人 403。

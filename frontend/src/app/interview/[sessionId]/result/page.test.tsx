@@ -69,8 +69,12 @@ describe("InterviewResultPage", () => {
   it("renders the rating summary from the report endpoint", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ code: 0, message: "ok", data: report }), {
+      vi.fn(async (input: RequestInfo | URL) =>
+        new Response(JSON.stringify({
+          code: 0,
+          message: "ok",
+          data: String(input).endsWith("/status") ? { status: "ready" } : report,
+        }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         }),

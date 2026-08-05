@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from hashlib import sha256
 import json
@@ -158,20 +159,54 @@ def _build_chain(model: Any, system_prompt: str, schema: type[Any]) -> Any:
     return prompt | chat_model.with_structured_output(schema)
 
 
+@dataclass
+class _StructuredOutputHealth:
+    """同一次批改里结构化输出一旦被证明不可用，后续条目直接走 plain JSON，不再白烧三轮。"""
+
+    usable: bool = True
+
+
+def _rejects_structured_output(error: Exception) -> bool:
+    """供应商直接回绝 tool_choice（400）——重发同样的请求没有意义，立刻改走 plain JSON。
+
+    实际踩到过：DeepSeek 的 thinking 模式返回
+    `Thinking mode does not support this tool_choice`，这是 BadRequestError 而不是
+    解析失败，原来只捕获解析异常的分支接不住，整场批改直接抛出去。
+    """
+
+    return getattr(error, "status_code", None) == 400
+
+
 async def _invoke_structured(
     chain: Any,
     grading_data: str,
     *,
     output_kind: str,
     plain_json_fallback: Callable[[], Awaitable[Any]] | None = None,
+    health: _StructuredOutputHealth | None = None,
 ) -> Any:
+    if health is not None and not health.usable and plain_json_fallback is not None:
+        return await plain_json_fallback()
     for attempt in range(1, _STRUCTURED_OUTPUT_ATTEMPTS + 1):
         try:
             return await chain.ainvoke({"grading_data": grading_data})
-        except (OutputParserException, ValidationError):
+        except Exception as error:
+            if not isinstance(error, OutputParserException | ValidationError):
+                if not _rejects_structured_output(error) or plain_json_fallback is None:
+                    raise
+                if health is not None:
+                    health.usable = False
+                logger.warning(
+                    "grading %s: provider rejected structured output (%s); using plain JSON",
+                    output_kind,
+                    type(error).__name__,
+                )
+                return await plain_json_fallback()
             if attempt == _STRUCTURED_OUTPUT_ATTEMPTS:
                 if plain_json_fallback is None:
                     raise
+                if health is not None:
+                    health.usable = False
                 logger.warning(
                     "grading %s exhausted structured output; falling back to plain JSON",
                     output_kind,
@@ -238,6 +273,7 @@ class GradingService:
     async def grade(self, request: GradingRequest) -> GradingReport:
         question_chain = _build_chain(self._llm, GRADING_SYSTEM_PROMPT, QuestionReview)
         question_slots = asyncio.Semaphore(4)
+        health = _StructuredOutputHealth()
 
         async def grade_question(grading_data: str) -> QuestionReview:
             async with question_slots:
@@ -245,6 +281,7 @@ class GradingService:
                     question_chain,
                     grading_data,
                     output_kind="question review",
+                    health=health,
                     plain_json_fallback=lambda: _invoke_plain_json(
                         self._llm,
                         schema=QuestionReview,
@@ -307,6 +344,7 @@ class GradingService:
                 grade=grade,
             ),
             output_kind="summary",
+            health=health,
             plain_json_fallback=lambda: _invoke_plain_json(
                 self._llm,
                 schema=SummaryReview,

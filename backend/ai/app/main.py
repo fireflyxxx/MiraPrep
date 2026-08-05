@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, Response
 from app.clients.redis import get_redis
 from app.config import get_settings
 from app.logging import configure_logging, request_id_context
-from app.routers import health, internal, interview_stream
+from app.routers import health, internal, interview_stream, interview_ws
 from app.services.interview_agent import build_interview_event_stream_service
 
 configure_logging()
@@ -67,13 +67,20 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Last-Event-ID",
+        "X-Internal-Token",
+        "X-Request-ID",
+    ],
 )
 app.include_router(health.router)
 app.include_router(internal.router)
 app.include_router(interview_stream.internal_router)
 app.include_router(interview_stream.router)
+app.include_router(interview_ws.router)
 
 
 @app.middleware("http")
@@ -91,4 +98,11 @@ async def add_request_id_and_handle_errors(request: Request, call_next) -> Respo
     finally:
         request_id_context.reset(token)
     response.headers["X-Request-ID"] = request_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response

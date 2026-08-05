@@ -10,4 +10,4 @@ def get_redis() -> Redis:
     """Create the Redis adapter lazily; later session tasks own its data model."""
 
     settings = get_settings()
-    return Redis(host=settings.redis_host, port=settings.redis_port, decode_responses=True)
+    return Redis.from_url(settings.redis_url, decode_responses=True)

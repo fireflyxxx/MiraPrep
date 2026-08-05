@@ -57,7 +57,7 @@ class ResumeUploadRateLimitIntegrationTest {
                 .andExpect(status().isOk());
         mockMvc.perform(uploadRequest(accessToken, "second.pdf"))
                 .andExpect(status().isTooManyRequests())
-                .andExpect(jsonPath("$.code").value(42902));
+                .andExpect(jsonPath("$.code").value(42900));
     }
 
     @Test

@@ -7,7 +7,8 @@ from redis.exceptions import RedisError
 os.environ.update(
     {
         "ANTHROPIC_API_KEY": "test-api-key",
-        "ANTHROPIC_MODEL": "claude-sonnet-5",
+        "ANTHROPIC_MODEL": "deepseek-v4-flash",
+        "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
         "BUSINESS_CALLBACK_URL": "http://business.test/api/v1/internal",
         "INTERNAL_TOKEN": "test-internal-token",
         "REDIS_HOST": "localhost",

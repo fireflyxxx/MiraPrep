@@ -26,6 +26,11 @@ export type RegisterInput = LoginInput & {
   code: string;
 };
 
+export type DeleteAccountInput = {
+  password: string;
+  confirmation: "DELETE";
+};
+
 export type UserProfile = {
   jobDirection: string | null;
   techStacks: string[];
@@ -39,6 +44,7 @@ const jsonRequest = (body: unknown) => ({
   method: "POST",
   body: JSON.stringify(body),
   skipAuthRefresh: true,
+  anonymous: true,
 });
 
 export function login(input: LoginInput): Promise<AuthResponse> {
@@ -58,6 +64,13 @@ export function sendVerificationCode(email: string): Promise<Record<string, neve
 
 export function getMe(): Promise<AuthUser> {
   return apiClient<AuthUser>(endpoints.me);
+}
+
+export function deleteMyAccount(input: DeleteAccountInput): Promise<void> {
+  return apiClient<void>(endpoints.me, {
+    method: "DELETE",
+    body: JSON.stringify(input),
+  });
 }
 
 export function getMyProfile(): Promise<UserProfile> {

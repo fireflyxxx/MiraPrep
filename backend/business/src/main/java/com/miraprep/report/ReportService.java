@@ -17,6 +17,8 @@ import com.miraprep.interview.QuestionRepository;
 import com.miraprep.report.dto.GradeFailedRequest;
 import com.miraprep.report.dto.GradeResultRequest;
 import com.miraprep.report.dto.ReportResponse;
+import com.miraprep.report.dto.ReportStatusResponse;
+import com.miraprep.resume.PrivateObjectAccessService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
@@ -46,18 +48,21 @@ public class ReportService {
     private final InterviewMessageRepository messageRepository;
     private final ReportRepository reportRepository;
     private final QuestionReviewRepository reviewRepository;
+    private final PrivateObjectAccessService privateObjectAccessService;
 
     public ReportService(
             InterviewSessionRepository sessionRepository,
             QuestionRepository questionRepository,
             InterviewMessageRepository messageRepository,
             ReportRepository reportRepository,
-            QuestionReviewRepository reviewRepository) {
+            QuestionReviewRepository reviewRepository,
+            PrivateObjectAccessService privateObjectAccessService) {
         this.sessionRepository = sessionRepository;
         this.questionRepository = questionRepository;
         this.messageRepository = messageRepository;
         this.reportRepository = reportRepository;
         this.reviewRepository = reviewRepository;
+        this.privateObjectAccessService = privateObjectAccessService;
     }
 
     @Transactional
@@ -177,6 +182,22 @@ public class ReportService {
                 questions);
     }
 
+    @Transactional(readOnly = true)
+    public ReportStatusResponse status(Long userId, Long sessionId) {
+        InterviewSession session = sessionRepository
+                .findByIdAndDeletedFalse(sessionId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+        if (!session.getUser().getId().equals(userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        return new ReportStatusResponse(switch (session.getGradingStatus()) {
+            case NONE -> "none";
+            case PENDING -> "grading";
+            case READY -> "ready";
+            case FAILED -> "failed";
+        });
+    }
+
     private InterviewSession lockedSession(Long sessionId) {
         return sessionRepository
                 .findByIdForUpdate(sessionId)
@@ -277,7 +298,12 @@ public class ReportService {
                 review == null ? null : review.getReferenceAnswer(),
                 review == null ? List.of() : review.getSuggestions(),
                 review == null ? List.of() : review.getFollowUpChainJson(),
-                answer == null ? null : answer.getAudioUrl());
+                answer == null
+                        ? null
+                        : privateObjectAccessService.signedAudioUrl(
+                                answer.getSession().getUser().getId(),
+                                answer.getSession().getId(),
+                                answer.getAudioUrl()));
     }
 
     private String sanitizeError(String code, String message) {

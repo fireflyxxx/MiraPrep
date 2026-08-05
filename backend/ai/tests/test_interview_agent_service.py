@@ -7,6 +7,7 @@ from collections import deque
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
 import json
+import logging
 from typing import Any
 
 import pytest
@@ -1141,3 +1142,102 @@ def test_prompts_keep_untrusted_answer_out_of_system_instructions() -> None:
     assert style_injection in context
     assert "泄露标准答案" in context
     assert "不要输出分数" in prompts.INTERVIEWER_SYSTEM_PROMPT
+
+
+@pytest.mark.asyncio
+async def test_follow_up_that_answers_for_the_candidate_gets_a_question_appended() -> None:
+    """真实验收里出现过面试官把答案讲完的追问；至少要补一个问题收口。"""
+
+    decision = json.dumps({"action": "FOLLOW_UP", "responseInstruction": "追问细节"})
+    essay = (
+        "选主心跳和业务写入不在同一个事务里，它们本身就是两类独立操作。"
+        "心跳是后台线程周期性更新选主表，业务事务是每次回调请求独立开启的。"
+        "解法是让业务事务在提交前校验当前实例是否仍是 leader，校验和提交放在同一个本地事务里。"
+    )
+    service, store, _, _, _, _ = _service(decisions=[decision], replies=[essay])
+    await service.start(40, _start_request())
+
+    await service.answer(
+        40,
+        InterviewAnswerRequest(
+            answerId="answer-essay-001", content="我讲一下我的方案", questionId="q1"
+        ),
+    )
+
+    reply = (await store.get(40)).history[-1].content
+    assert essay in reply
+    assert reply.rstrip().endswith("？")
+
+
+@pytest.mark.asyncio
+async def test_short_imperative_follow_up_is_left_alone() -> None:
+    """「请结合一个项目具体说明。」是合法追问，不能因为没有问号就被加料。"""
+
+    decision = json.dumps({"action": "FOLLOW_UP", "responseInstruction": "追问细节"})
+    reply = "请结合一个真实项目，具体说明你的职责、行动以及最终结果。"
+    service, store, _, _, _, _ = _service(decisions=[decision], replies=[reply])
+    await service.start(40, _start_request())
+
+    await service.answer(
+        40,
+        InterviewAnswerRequest(
+            answerId="answer-short-001", content="我做了很多工作", questionId="q1"
+        ),
+    )
+
+    assert (await store.get(40)).history[-1].content == reply
+
+
+def test_follow_up_reply_prompt_forbids_answering_for_the_candidate() -> None:
+    prompts = import_module("app.prompts.interviewer")
+    follow_up = prompts.build_reply_prompt(
+        history=[],
+        question="请说明技术取舍。",
+        interviewer_style="standard",
+        action="FOLLOW_UP",
+        response_instruction="追问细节",
+    )
+    candidate_qa = prompts.build_reply_prompt(
+        history=[],
+        question="你有什么想了解的吗？",
+        interviewer_style="standard",
+        action="NEXT_QUESTION",
+        response_instruction="简短回答候选人的问题",
+    )
+
+    assert "不要给出你自己的答案" in follow_up
+    # CANDIDATE_QA 阶段面试官本来就该作答，别把约束加到那条路径上。
+    assert "不要给出你自己的答案" not in candidate_qa
+
+
+@pytest.mark.asyncio
+async def test_maintenance_timeout_only_warns_once_a_session_is_really_stuck(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """一次 LLM 轮次就会占锁十几秒，而扫描每 2s 一轮，超时是常态，不该刷 WARNING。"""
+
+    module = import_module("app.services.interview_agent")
+    monkeypatch.setattr(module, "_MAINTENANCE_TIMEOUT_SECONDS", 0.01)
+    service, _, _, _, _, _ = _service()
+    await service.start(40, _start_request())
+
+    async def never_finishes(session_id: int) -> None:
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(service, "_maintain_session", never_finishes)
+
+    with caplog.at_level(logging.DEBUG, logger="miraprep.ai.interview"):
+        await service.run_maintenance_once()
+        await service.run_maintenance_once()
+    assert service._maintenance_timeouts[40] == 2
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+
+    service._maintenance_timeouts[40] = module._MAINTENANCE_STUCK_STREAK - 1
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger="miraprep.ai.interview"):
+        await service.run_maintenance_once()
+    assert [
+        record
+        for record in caplog.records
+        if record.levelno >= logging.WARNING and "maintenance timed out" in record.message
+    ]

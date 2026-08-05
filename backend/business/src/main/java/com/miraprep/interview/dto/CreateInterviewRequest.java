@@ -12,11 +12,11 @@ public record CreateInterviewRequest(
         @NotNull Long resumeId,
         @NotBlank @Size(max = 255) String jobDirection,
         @Size(max = 255) String jobTitle,
-        String jdText,
+        @Size(max = 10_000) String jdText,
         @NotBlank String difficulty,
         @NotEmpty List<@NotBlank @Size(max = 64) String> types,
         @NotNull Integer durationMin,
-        String customRequirements,
+        @Size(max = 2_000) String customRequirements,
         @NotBlank String interviewerStyle,
         @NotNull Boolean voiceEnabled) {
 

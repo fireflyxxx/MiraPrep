@@ -67,6 +67,8 @@ class InterviewApiIntegrationTest {
         registry.add("app.auth.token-store", () -> "memory");
         registry.add("app.auth.rate-limiter", () -> "memory");
         registry.add("app.internal-token", () -> "test-internal-token");
+        registry.add("app.interview.create-max-attempts", () -> "3");
+        registry.add("app.interview.create-window", () -> "60");
     }
 
     @BeforeEach
@@ -115,6 +117,28 @@ class InterviewApiIntegrationTest {
                         && request.config().durationMin() == 45
                         && request.config().interviewerStyle().equals("balanced")
                         && request.resume().parsedJson().isEmpty()));
+    }
+
+    @Test
+    void interviewCreationIsRateLimitedPerIpAndUserWithTheUnifiedCode() throws Exception {
+        String token = registerAndGetAccessToken();
+        for (int index = 0; index < 3; index++) {
+            createInterview(token, uploadResume(token, "limited-%d.pdf".formatted(index)));
+        }
+
+        mockMvc.perform(post("/api/v1/interviews")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType("application/json")
+                        .content(createBody(uploadResume(token, "blocked.pdf"))))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value(42900));
+
+        String otherToken = registerAndGetAccessToken();
+        mockMvc.perform(post("/api/v1/interviews")
+                        .header("Authorization", "Bearer " + otherToken)
+                        .contentType("application/json")
+                        .content(createBody(uploadResume(otherToken, "other-user.pdf"))))
+                .andExpect(status().isOk());
     }
 
     @Test

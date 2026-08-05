@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from collections import Counter
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ import hmac
 import json
 import logging
 import re
+from time import monotonic
 from typing import Any, Protocol
 
 from langchain_core.messages import SystemMessage
@@ -59,6 +61,8 @@ from app.services.session_state import (
     get_interview_checkpointer,
 )
 from app.services.interview_graph import build_interview_graph
+from app.services.tts.base import TtsProvider
+from app.services.tts.sentence import SentenceChunker, split_sentences
 
 logger = logging.getLogger("miraprep.ai.interview")
 
@@ -67,6 +71,14 @@ _LIVE_SCORING_PATTERN = re.compile(
     r"标准答案|答案是|答得.{0,3}(很好|不错|很差)|通过了?面试|面试.{0,4}失败)",
     re.IGNORECASE,
 )
+_QUESTION_MARK = re.compile(r"[?？]")
+# 追问偶尔会退化成「面试官把答案讲完」：没有问号 + 长篇大论。
+# 只卡这两个条件同时成立的情况——「请结合一个项目具体说明。」这类祈使式短追问必须放行。
+_ESSAY_REPLY_CHARS = 80
+_FOLLOW_UP_QUESTION_FALLBACK = "能再结合一个你自己经历过的具体例子说明一下吗？"
+# 扫描每 2s 一轮：连续 30 次拿不到锁 ≈ 一分钟没松手，正常作答轮次不会这么久。
+_MAINTENANCE_TIMEOUT_SECONDS = 5
+_MAINTENANCE_STUCK_STREAK = 30
 
 
 class MessageSink(Protocol):
@@ -170,6 +182,7 @@ class InterviewAgentService:
         question_sink: QuestionSink | None = None,
         clock: Callable[[], datetime] | None = None,
         checkpointer: Any | None = None,
+        tts: TtsProvider | None = None,
     ) -> None:
         self._store = store
         self._llm = llm
@@ -178,6 +191,8 @@ class InterviewAgentService:
         self._question_sink = question_sink
         self._clock = clock or (lambda: datetime.now(UTC))
         self._checkpointer = checkpointer or MemorySaver()
+        self._tts = tts
+        self._maintenance_timeouts: dict[int, int] = {}
         self._interview_graph = None
         if llm is not None:
             self._interview_graph = build_interview_graph(
@@ -314,6 +329,41 @@ class InterviewAgentService:
         ):
             raise RuntimeAuthorizationError("invalid interview runtime token")
 
+    async def set_voice(self, session_id: int, enabled: bool) -> None:
+        """Persist the client voice preference and speak the current question on first enable."""
+
+        async with self._store.lock(session_id):
+            state = await self._store.get(session_id)
+            state.voiceEnabled = enabled
+            await self._store.save(state)
+            if not enabled or self._tts is None:
+                return
+            for index in range(len(state.history) - 1, -1, -1):
+                message = state.history[index]
+                message_seq = index + 1
+                if message.role is not ConversationRole.INTERVIEWER:
+                    continue
+                if message_seq in state.spokenMessageSeqs:
+                    return
+                question = next(
+                    (
+                        item
+                        for item in state.questions
+                        if message.questionId is not None
+                        and str(item.questionId) == str(message.questionId)
+                    ),
+                    None,
+                )
+                if await self._emit_tts_text(
+                    state,
+                    message.content,
+                    question=question,
+                    message_seq=message_seq,
+                ):
+                    state.spokenMessageSeqs = (state.spokenMessageSeqs + [message_seq])[-100:]
+                    await self._store.save(state)
+                return
+
     async def enforce_deadline(self, session_id: int) -> bool:
         async with self._store.lock(session_id):
             state = await self._store.get(session_id)
@@ -328,21 +378,31 @@ class InterviewAgentService:
         async def maintain(session_id: int) -> None:
             async with semaphore:
                 try:
-                    async with asyncio.timeout(5):
+                    async with asyncio.timeout(_MAINTENANCE_TIMEOUT_SECONDS):
                         await self._maintain_session(session_id)
+                    self._maintenance_timeouts.pop(session_id, None)
                 except TimeoutError:
-                    logger.warning(
+                    # 一次 LLM 轮次会占着会话锁十几秒，扫描每 2s 一轮，超时是常态而非故障。
+                    # 只有连续超时到明显不可能是「正在作答」时才算真的卡死。
+                    streak = self._maintenance_timeouts.get(session_id, 0) + 1
+                    self._maintenance_timeouts[session_id] = streak
+                    log = logger.warning if streak >= _MAINTENANCE_STUCK_STREAK else logger.debug
+                    log(
                         "interview maintenance timed out",
-                        extra={"session_id": session_id},
+                        extra={"session_id": session_id, "streak": streak},
                     )
                 except Exception:
                     logger.exception(
                         "interview maintenance failed", extra={"session_id": session_id}
                     )
 
-        await asyncio.gather(
-            *(maintain(session_id) for session_id in await self._store.session_ids())
-        )
+        session_ids = await self._store.session_ids()
+        self._maintenance_timeouts = {
+            session_id: streak
+            for session_id, streak in self._maintenance_timeouts.items()
+            if session_id in set(session_ids)
+        }
+        await asyncio.gather(*(maintain(session_id) for session_id in session_ids))
 
     async def _maintain_session(self, session_id: int) -> None:
         async with self._store.lock(session_id):
@@ -495,6 +555,41 @@ class InterviewAgentService:
         emitted: list[str] = []
         unsafe = False
         received_chars = 0
+        message_seq = state.messageSeq + 1
+        sentence_chunker = (
+            SentenceChunker() if state.voiceEnabled and self._tts is not None else None
+        )
+        sentence_index = 0
+        spoken = False
+        tts_failed = False
+
+        async def emit_text(text: str) -> None:
+            nonlocal sentence_index, spoken, tts_failed
+            await self._emit_token_text(state, text, question)
+            if sentence_chunker is None or tts_failed:
+                return
+            for sentence in sentence_chunker.push(text):
+                try:
+                    spoken = (
+                        await self._emit_tts_sentence(
+                            state,
+                            sentence,
+                            question=question,
+                            message_seq=message_seq,
+                            sentence_index=sentence_index,
+                        )
+                        or spoken
+                    )
+                    sentence_index += 1
+                except Exception as exc:
+                    tts_failed = True
+                    logger.exception("tts synthesis failed", extra={"session_id": state.sessionId})
+                    await self._store.append_event(
+                        state.sessionId,
+                        "error",
+                        {"code": "tts_failed", "message": str(exc)},
+                    )
+
         try:
             async for chunk in self._llm.stream(
                 messages=[{"role": "user", "content": prompt}],
@@ -514,7 +609,7 @@ class InterviewAgentService:
                     safe_prefix = buffer[:flush_length]
                     buffer = buffer[flush_length:]
                     emitted.append(safe_prefix)
-                    await self._emit_token_text(state, safe_prefix, question)
+                    await emit_text(safe_prefix)
         except Exception:
             logger.exception(
                 "interviewer reply generation failed", extra={"session_id": state.sessionId}
@@ -523,12 +618,47 @@ class InterviewAgentService:
 
         if not unsafe and buffer:
             emitted.append(buffer)
-            await self._emit_token_text(state, buffer, question)
+            await emit_text(buffer)
 
         if unsafe or not emitted:
             fallback = self._safe_fallback(decision.action)
             emitted.append(fallback)
-            await self._emit_token_text(state, fallback, question)
+            await emit_text(fallback)
+        elif decision.action in {AgentAction.FOLLOW_UP, AgentAction.HINT} and self._reads_as_answer(
+            "".join(emitted)
+        ):
+            # 模型偶尔会顺着上文替候选人把答案写完；已经流出去的收不回，至少补一个问题收口。
+            logger.warning(
+                "interviewer follow-up read as an answer, appending a question",
+                extra={"session_id": state.sessionId, "action": decision.action.value},
+            )
+            emitted.append(_FOLLOW_UP_QUESTION_FALLBACK)
+            await emit_text(_FOLLOW_UP_QUESTION_FALLBACK)
+
+        if sentence_chunker is not None and not tts_failed:
+            for sentence in sentence_chunker.flush():
+                try:
+                    spoken = (
+                        await self._emit_tts_sentence(
+                            state,
+                            sentence,
+                            question=question,
+                            message_seq=message_seq,
+                            sentence_index=sentence_index,
+                        )
+                        or spoken
+                    )
+                    sentence_index += 1
+                except Exception as exc:
+                    logger.exception("tts synthesis failed", extra={"session_id": state.sessionId})
+                    await self._store.append_event(
+                        state.sessionId,
+                        "error",
+                        {"code": "tts_failed", "message": str(exc)},
+                    )
+                    break
+        if spoken:
+            state.spokenMessageSeqs = (state.spokenMessageSeqs + [message_seq])[-100:]
 
         await self._record_message(
             state,
@@ -536,6 +666,12 @@ class InterviewAgentService:
             content="".join(emitted),
             question=question,
         )
+
+    @staticmethod
+    def _reads_as_answer(reply: str) -> bool:
+        """长篇且不含问号的追问，基本就是模型自问自答了。"""
+
+        return len(reply) > _ESSAY_REPLY_CHARS and not _QUESTION_MARK.search(reply)
 
     @staticmethod
     def _safe_fallback(action: AgentAction) -> str:
@@ -773,7 +909,21 @@ class InterviewAgentService:
         question: RuntimeQuestion | None,
         incremental: bool = False,
     ) -> None:
-        await self._emit_token_text(state, content, question, incremental=incremental)
+        message_seq = state.messageSeq + 1
+        if state.voiceEnabled and self._tts is not None:
+            _, spoken = await asyncio.gather(
+                self._emit_token_text(state, content, question, incremental=incremental),
+                self._emit_tts_text(
+                    state,
+                    content,
+                    question=question,
+                    message_seq=message_seq,
+                ),
+            )
+            if spoken:
+                state.spokenMessageSeqs = (state.spokenMessageSeqs + [message_seq])[-100:]
+        else:
+            await self._emit_token_text(state, content, question, incremental=incremental)
         await self._record_message(
             state,
             role=ConversationRole.INTERVIEWER,
@@ -801,7 +951,7 @@ class InterviewAgentService:
                 phase=state.phase,
                 questionId=question.questionId if question else None,
             )
-        for chunk in chunks:
+        for index, chunk in enumerate(chunks):
             state.pendingInterviewerMessage.content += chunk
             await self._store.append_event_and_save(
                 state,
@@ -810,8 +960,113 @@ class InterviewAgentService:
                     "text": chunk,
                     "questionId": question.questionId if question else None,
                     "phase": state.phase.value,
+                    "messageEnd": index == len(chunks) - 1,
                 },
             )
+
+    async def _emit_tts_text(
+        self,
+        state: InterviewSessionState,
+        content: str,
+        *,
+        question: RuntimeQuestion | None,
+        message_seq: int,
+    ) -> bool:
+        if self._tts is None:
+            return False
+        try:
+            for sentence_index, sentence in enumerate(split_sentences(content)):
+                if not await self._emit_tts_sentence(
+                    state,
+                    sentence,
+                    question=question,
+                    message_seq=message_seq,
+                    sentence_index=sentence_index,
+                ):
+                    return False
+            return True
+        except Exception as exc:
+            logger.exception("tts synthesis failed", extra={"session_id": state.sessionId})
+            await self._store.append_event(
+                state.sessionId,
+                "error",
+                {"code": "tts_failed", "message": str(exc)},
+            )
+            return False
+
+    async def _emit_tts_sentence(
+        self,
+        state: InterviewSessionState,
+        sentence: str,
+        *,
+        question: RuntimeQuestion | None,
+        message_seq: int,
+        sentence_index: int,
+    ) -> bool:
+        assert self._tts is not None
+        started = monotonic()
+        frame_index = 0
+        first_latency_ms: int | None = None
+        async for chunk in self._tts.synthesize(sentence):
+            latency_ms = round((monotonic() - started) * 1000)
+            if first_latency_ms is None:
+                first_latency_ms = latency_ms
+            await self._append_audio_event(
+                state,
+                chunk,
+                question=question,
+                message_seq=message_seq,
+                sentence_index=sentence_index,
+                frame_index=frame_index,
+                is_final=False,
+                latency_ms=latency_ms,
+            )
+            frame_index += 1
+        if first_latency_ms is None:
+            return False
+        await self._append_audio_event(
+            state,
+            b"",
+            question=question,
+            message_seq=message_seq,
+            sentence_index=sentence_index,
+            frame_index=frame_index,
+            is_final=True,
+            latency_ms=first_latency_ms,
+        )
+        if first_latency_ms >= 1_500:
+            logger.warning(
+                "tts first audio exceeded target",
+                extra={"session_id": state.sessionId, "latency_ms": first_latency_ms},
+            )
+        return True
+
+    async def _append_audio_event(
+        self,
+        state: InterviewSessionState,
+        chunk: bytes,
+        *,
+        question: RuntimeQuestion | None,
+        message_seq: int,
+        sentence_index: int,
+        frame_index: int,
+        is_final: bool,
+        latency_ms: int,
+    ) -> None:
+        await self._store.append_event(
+            state.sessionId,
+            "audio",
+            {
+                "chunk": base64.b64encode(chunk).decode("ascii"),
+                "format": self._tts.audio_format if self._tts is not None else "unknown",
+                "forQuestionId": question.questionId if question else None,
+                "forMessageSeq": message_seq,
+                "sentenceIndex": sentence_index,
+                "frameIndex": frame_index,
+                "isFinal": is_final,
+                "latencyMs": latency_ms,
+            },
+        )
 
     async def _record_message(
         self,
@@ -934,7 +1189,7 @@ class InterviewAgentService:
         return hashlib.sha256(access_token.encode("utf-8")).hexdigest()
 
     async def aclose(self) -> None:
-        for resource in (self._message_sink, self._llm):
+        for resource in (self._message_sink, self._llm, self._tts):
             close = getattr(resource, "aclose", None)
             if close is not None:
                 try:
@@ -979,6 +1234,8 @@ def _build_decision_chain(llm: Any) -> Any:
 def build_interview_agent_service() -> InterviewAgentService:
     settings = get_settings()
     callback = BusinessCallbackClient(settings)
+    from app.services.speech import build_tts_provider
+
     return InterviewAgentService(
         store=RedisSessionStateStore(get_redis()),
         # 与 routers/internal.py 一致：thinking 模式不兼容 with_structured_output 的
@@ -988,6 +1245,7 @@ def build_interview_agent_service() -> InterviewAgentService:
         grading_trigger=BusinessGradingTrigger(callback),
         question_sink=BusinessQuestionSink(callback),
         checkpointer=get_interview_checkpointer(),
+        tts=build_tts_provider(settings),
     )
 
 

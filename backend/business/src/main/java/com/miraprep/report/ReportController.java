@@ -2,6 +2,7 @@ package com.miraprep.report;
 
 import com.miraprep.common.response.ApiResponse;
 import com.miraprep.report.dto.ReportResponse;
+import com.miraprep.report.dto.ReportStatusResponse;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,5 +23,12 @@ public class ReportController {
             @PathVariable Long sessionId, Authentication authentication) {
         return ApiResponse.ok(
                 reportService.get(Long.parseLong(authentication.getName()), sessionId));
+    }
+
+    @GetMapping("/{sessionId}/status")
+    public ApiResponse<ReportStatusResponse> status(
+            @PathVariable Long sessionId, Authentication authentication) {
+        return ApiResponse.ok(
+                reportService.status(Long.parseLong(authentication.getName()), sessionId));
     }
 }

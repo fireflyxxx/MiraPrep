@@ -128,6 +128,84 @@ Windows PowerShell 可用 `Copy-Item .env.example .env` 代替 `cp`。服务地�
 
 `docker compose down` 只停止并删除容器，不删除命名数据卷；再次 `up -d` 会保留 MySQL、Redis 和 MinIO 数据。需要彻底重置本地数据时，确认无保留需求后执行 `docker compose down -v`。
 
+## 🚀 生产部署
+
+T-111 使用单机 Docker Compose：Caddy 是唯一公网入口，自动申请/续期 HTTPS 证书；frontend、business、ai、MySQL、Redis 和 MinIO 只在容器网络内通信。生产服务器建议至少 4 核 CPU、8 GB 内存、40 GB 可用磁盘，并只开放 SSH、TCP 80/443 与 UDP 443。
+
+### 1. 准备域名与密钥
+
+先把域名 A/AAAA 记录指向服务器公网 IP，再在服务器仓库中创建生产配置：
+
+```bash
+cp infra/.env.prod.example infra/.env.prod
+chmod 600 infra/.env.prod
+```
+
+逐项替换示例值。各服务密码应独立生成，`JWT_SECRET` 和 `AI_INTERNAL_TOKEN` 不得复用：
+
+```bash
+openssl rand -hex 64   # JWT_SECRET
+openssl rand -hex 48   # AI_INTERNAL_TOKEN / 数据库 / Redis / MinIO 密码
+```
+
+`.env.prod` 已被 Git 忽略；提交前仍需运行 `git grep -nE 'sk-ant-[A-Za-z0-9_-]{20,}|BEGIN (RSA|OPENSSH) PRIVATE KEY'` 检查误入库密钥。SMTP 使用企业邮箱、SES、Resend 等提供的 SMTP 凭证，`MAIL_FROM` 必须是服务商已验证的发件地址。语音模式还必须填写 Deepgram ASR 与 OpenAI TTS 的真实密钥；生产 Compose 会拒绝缺少这两项配置的启动，避免部署后才发现 WebSocket 能连但无法转写或播音。
+
+### 2. 校验并部署
+
+服务器需安装 Git、Docker Engine 与 Compose 插件。首次部署及后续发布都从仓库根目录执行：
+
+```bash
+docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml config --quiet
+chmod +x infra/deploy.sh infra/backup.sh
+./infra/deploy.sh
+```
+
+`deploy.sh` 只接受 fast-forward 拉取，拒绝示例域名/占位密钥，构建三个镜像并等待健康检查。business 启动时由 Flyway 自动执行版本化迁移；不要在生产使用 `ddl-auto=update`。
+
+常用诊断命令：
+
+```bash
+docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml ps
+docker compose --env-file infra/.env.prod -f infra/docker-compose.prod.yml logs --tail=200 business ai caddy
+curl -fsS "https://你的域名/api/v1/health"
+curl -i "https://你的域名/api/v1/internal/ping"  # 必须是 404
+curl -i "https://你的域名/internal/ping"         # 必须是 404
+```
+
+### 3. 每日备份与恢复演练
+
+手工执行一次备份并检查产物：
+
+```bash
+./infra/backup.sh
+find infra/backups -maxdepth 3 -type f -ls
+```
+
+每天 UTC 03:00 运行的 crontab 示例：
+
+```cron
+0 3 * * * cd /srv/MiraPrep && ./infra/backup.sh >> /var/log/miraprep-backup.log 2>&1
+```
+
+脚本生成压缩 MySQL dump、MinIO bucket 镜像和校验和，并按 `BACKUP_RETENTION_DAYS` 清理旧目录。上线前必须在隔离环境做一次恢复演练：新建空库后导入 `mysql.sql.gz`，用 `mc mirror` 把备份目录恢复到测试 bucket，再核对用户、简历、场次、报告记录和对象数量。生产恢复前先停写并另做一份当前快照。
+
+### 4. 上线与重启冒烟清单
+
+以下项目需要在真实域名、真实 SMTP 收件箱和生产服务器上逐项留证；T-118 尚未上线时 PDF 项可标记为“不适用”：
+
+- [ ] 首页与 `/auth` 使用有效 HTTPS，证书链正常，无浏览器 mixed-content/CSP 错误
+- [ ] 注册验证码真实送达，邮件正文和服务日志不泄露其他用户验证码
+- [ ] 注册 → 登录 → 上传简历 → 解析成功
+- [ ] 创建面试 → 大纲就绪 → 完成一场文字面试 → 报告生成并可查看
+- [ ] 面试 SSE 首 token 持续到达、无批量缓冲；中途断网一次后按最后 `seq` 恢复且不重复
+- [ ] 限流返回 HTTP 429 和业务码 `42900`
+- [ ] 公网 `/api/v1/internal/*` 与 `/internal/*` 都返回 404
+- [ ] 若已完成 T-118，PDF 可导出并正常打开
+- [ ] `infra/backup.sh` 生成 MySQL、MinIO 和校验和文件
+- [ ] 执行 `docker compose ... restart` 后所有服务恢复 healthy，以上用户数据与 MinIO 对象仍存在
+
+回滚应用版本时先确认数据库迁移是否向后兼容，再切回上一个已验证 commit 并重新运行 `./infra/deploy.sh`。若迁移不兼容，必须先停写，按恢复演练从上线前备份恢复数据库和对象存储；不要直接删除生产数据卷。
+
 ## 🧭 路由一览
 
 | 路由 | 页面 | 状态 |

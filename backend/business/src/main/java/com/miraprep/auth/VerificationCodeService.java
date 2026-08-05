@@ -4,20 +4,24 @@ import com.miraprep.common.error.ErrorCode;
 import com.miraprep.common.exception.BusinessException;
 import java.security.SecureRandom;
 import java.time.Duration;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
 public class VerificationCodeService {
-    private static final Logger LOGGER = LoggerFactory.getLogger(VerificationCodeService.class);
     private final AuthTokenStore tokenStore;
     private final RequestRateLimiter rateLimiter;
     private final Duration codeTtl;
     private final Duration resendTtl;
     private final int maxVerifyAttempts;
+    private final int sendIpMaxAttempts;
+    private final int sendRecipientMaxAttempts;
+    private final int sendGlobalMaxAttempts;
+    private final Duration sendWindow;
     private final String fixedCode;
+    private final VerificationCodeMailer mailer;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public VerificationCodeService(
@@ -26,25 +30,62 @@ public class VerificationCodeService {
             @Value("${app.auth.verification.ttl}") long codeTtlSeconds,
             @Value("${app.auth.verification.resend-ttl}") long resendTtlSeconds,
             @Value("${app.auth.verification.max-attempts:5}") int maxVerifyAttempts,
-            @Value("${app.auth.verification.fixed-code:}") String fixedCode) {
+            @Value("${app.auth.verification.fixed-code:}") String fixedCode,
+            @Value("${app.auth.verification.send-ip-max-attempts:20}") int sendIpMaxAttempts,
+            @Value("${app.auth.verification.send-recipient-max-attempts:5}")
+                    int sendRecipientMaxAttempts,
+            @Value("${app.auth.verification.send-global-max-attempts:1000}")
+                    int sendGlobalMaxAttempts,
+            @Value("${app.auth.verification.send-window:3600}") long sendWindowSeconds,
+            VerificationCodeMailer mailer) {
         this.tokenStore = tokenStore;
         this.rateLimiter = rateLimiter;
         this.codeTtl = Duration.ofSeconds(codeTtlSeconds);
         this.resendTtl = Duration.ofSeconds(resendTtlSeconds);
         this.maxVerifyAttempts = maxVerifyAttempts;
         this.fixedCode = fixedCode;
+        this.sendIpMaxAttempts = sendIpMaxAttempts;
+        this.sendRecipientMaxAttempts = sendRecipientMaxAttempts;
+        this.sendGlobalMaxAttempts = sendGlobalMaxAttempts;
+        this.sendWindow = Duration.ofSeconds(sendWindowSeconds);
+        this.mailer = mailer;
     }
 
     public void sendCode(String email, String scene, String clientIp) {
         String normalizedEmail = normalizeEmail(email);
         String requestKey = "auth:verification:resend:" + clientIp + ':' + scene + ':' + normalizedEmail;
-        if (!rateLimiter.tryAcquire(requestKey, 1, resendTtl)) {
-            throw new BusinessException(ErrorCode.VERIFICATION_CODE_TOO_FREQUENT);
-        }
+        List<String> acquiredKeys = new ArrayList<>();
+        acquireOrThrow(acquiredKeys, "auth:verification:send:global", sendGlobalMaxAttempts, sendWindow);
+        acquireOrThrow(
+                acquiredKeys,
+                "auth:verification:send:ip:" + clientIp,
+                sendIpMaxAttempts,
+                sendWindow);
+        acquireOrThrow(
+                acquiredKeys,
+                "auth:verification:send:recipient:" + scene + ':' + normalizedEmail,
+                sendRecipientMaxAttempts,
+                sendWindow);
+        acquireOrThrow(acquiredKeys, requestKey, 1, resendTtl);
         String code = String.format("%06d", secureRandom.nextInt(1_000_000));
-        tokenStore.put(codeKey(normalizedEmail, scene), code, codeTtl);
-        // 邮件服务在 T-010 允许先 mock；生产替换为真正的邮件 provider 时不要把 code 打到日志。
-        LOGGER.info("Mock verification code issued for email={} scene={}: {}", normalizedEmail, scene, code);
+        String codeKey = codeKey(normalizedEmail, scene);
+        tokenStore.put(codeKey, code, codeTtl);
+        try {
+            mailer.send(normalizedEmail, scene, code);
+        } catch (RuntimeException exception) {
+            tokenStore.delete(codeKey);
+            acquiredKeys.forEach(rateLimiter::release);
+            throw exception;
+        }
+    }
+
+    private void acquireOrThrow(
+            List<String> acquiredKeys, String key, int limit, Duration window) {
+        if (!rateLimiter.tryAcquire(key, limit, window)) {
+            acquiredKeys.forEach(rateLimiter::release);
+            throw new BusinessException(ErrorCode.RATE_LIMITED);
+        }
+        acquiredKeys.add(key);
     }
 
     public boolean verifyAndConsume(String email, String scene, String suppliedCode) {

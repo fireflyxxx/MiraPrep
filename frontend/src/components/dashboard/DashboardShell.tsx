@@ -112,10 +112,14 @@ export default function DashboardShell({ children }: { children: React.ReactNode
 
               <div className="my-1 h-px bg-muted" />
 
-              <button className="mira-button flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[13px] text-foreground hover:bg-surface-subtle">
+              <Link
+                href="/settings"
+                onClick={() => setMenuOpen(false)}
+                className="mira-button flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[13px] text-foreground hover:bg-surface-subtle"
+              >
                 <span className="h-[6px] w-[6px] rounded-[2px] border-[1.5px] border-muted-foreground" />
                 账户设置
-              </button>
+              </Link>
               <button className="mira-button flex w-full items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left text-[13px] text-foreground hover:bg-surface-subtle">
                 <span className="h-[6px] w-[6px] rounded-[2px] border-[1.5px] border-muted-foreground" />
                 通知偏好
@@ -167,7 +171,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
 
       <nav
         aria-label="移动端主导航"
-        className="fixed right-3 bottom-3 left-3 z-40 grid grid-cols-4 gap-1 rounded-[16px] border border-border bg-surface/95 p-1.5 shadow-[0_18px_50px_-22px_rgba(0,0,0,0.45)] backdrop-blur md:hidden"
+        className="fixed right-3 bottom-3 left-3 z-40 grid grid-cols-5 gap-1 rounded-[16px] border border-border bg-surface/95 p-1.5 shadow-[0_18px_50px_-22px_rgba(0,0,0,0.45)] backdrop-blur md:hidden"
       >
         {navItems.map((item) => {
           const active = pathname === item.href;
@@ -186,8 +190,17 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             </Link>
           );
         })}
-        {/* ponytail: 侧边栏在 <md 整个隐藏，退出登录是唯一必须保底的账号操作；
-            其余账号入口等 T-011 做移动端头部时再补。 */}
+        <Link
+          href="/settings"
+          aria-current={pathname === "/settings" ? "page" : undefined}
+          className={`mira-button rounded-[11px] px-2 py-2.5 text-center text-xs ${
+            pathname === "/settings"
+              ? "bg-muted font-medium text-foreground"
+              : "text-muted-foreground hover:bg-surface-subtle hover:text-foreground"
+          }`}
+        >
+          设置
+        </Link>
         <button
           type="button"
           onClick={handleLogout}

@@ -351,6 +351,13 @@ body {
     scroll-behavior: auto !important;
     transition-duration: .01ms !important;
   }
+
+  /* 减少动态效果不仅要缩短时长，也要移除 hover/active 的空间位移。 */
+  .mira-surface:hover,
+  .mira-button:hover,
+  .mira-button:active {
+    transform: none !important;
+  }
 }
 
 /* ---------------------------------------------------------------------

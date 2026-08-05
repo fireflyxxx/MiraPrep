@@ -7,6 +7,8 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface InterviewMessageRepository extends JpaRepository<InterviewMessage, Long> {
+    List<InterviewMessage> findBySessionIdIn(List<Long> sessionIds);
+
     Optional<InterviewMessage> findBySessionIdAndSeq(Long sessionId, int seq);
 
     List<InterviewMessage> findBySessionIdAndSeqGreaterThanOrderBySeqAsc(Long sessionId, int afterSeq);

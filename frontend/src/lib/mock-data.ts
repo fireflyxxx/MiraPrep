@@ -114,13 +114,12 @@ export const experienceOptions = [
   { id: "5+", label: "5 年以上" },
 ];
 
-export const skillOptions = [
-  "React",
-  "TypeScript",
-  "Vue",
-  "Node.js",
-  "Next.js",
-  "Webpack",
-  "CSS / 动画",
-  "性能优化",
-];
+/** 技术栈候选项按 onboardJobs 的 id 分组，避免后端候选人看到一屏前端框架。 */
+export const skillOptionsByJob: Record<string, string[]> = {
+  frontend: ["React", "TypeScript", "Vue", "Node.js", "Next.js", "Webpack", "CSS / 动画", "性能优化"],
+  backend: ["Java", "Go", "Spring Boot", "MySQL", "Redis", "消息队列", "微服务", "分布式设计"],
+  pm: ["需求分析", "用户研究", "数据分析", "增长策略", "项目管理", "竞品分析", "AB 实验", "商业化"],
+  data: ["Python", "SQL", "机器学习", "深度学习", "特征工程", "数据仓库", "统计分析", "A/B 测试"],
+};
+
+export const skillOptions = skillOptionsByJob.frontend;
