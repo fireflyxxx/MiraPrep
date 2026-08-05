@@ -17,6 +17,7 @@ import {
   type InterviewerStyle,
 } from "@/lib/api/interview";
 import { storeInterviewRuntimeToken } from "@/lib/api/interview-stream";
+import { storeInterviewVoicePreference } from "@/lib/api/interview-ws";
 import { ApiError } from "@/lib/api/types";
 import {
   difficultyOptions,
@@ -154,6 +155,7 @@ export default function InterviewSetupPage() {
           if (created.runtimeToken) {
             storeInterviewRuntimeToken(created.sessionId, created.runtimeToken);
           }
+          storeInterviewVoicePreference(created.sessionId, voiceEnabled);
         } catch (error) {
           if (!mounted.current || controller.signal.aborted) return;
           const status = error instanceof ApiError ? error.status : undefined;

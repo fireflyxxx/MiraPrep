@@ -2,6 +2,7 @@ import { aiStreamUrl } from "./endpoints";
 import type { InterviewStreamEvent } from "./interview-stream";
 
 const audioCursorKeyPrefix = "miraprep.interview-audio-cursor.";
+const voicePreferenceKeyPrefix = "miraprep.interview-voice-preference.";
 
 export type AsrPartialEvent = {
   type: "asr_partial";
@@ -91,8 +92,39 @@ function storeAudioCursor(sessionId: number, value: number): void {
 export function clearInterviewAudioCursor(sessionId: number): void {
   try {
     window.sessionStorage.removeItem(audioCursorKey(sessionId));
+    window.sessionStorage.removeItem(
+      `${voicePreferenceKeyPrefix}${sessionId}`,
+    );
   } catch {
     // 清理失败不阻塞离开会话。
+  }
+}
+
+/** 配置向导勾选的「语音面试」偏好，供面试页进入时决定默认模式。 */
+export function storeInterviewVoicePreference(
+  sessionId: number,
+  enabled: boolean,
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(
+      `${voicePreferenceKeyPrefix}${sessionId}`,
+      enabled ? "1" : "0",
+    );
+  } catch {
+    // 存不下就按文字模式进入，用户仍可手动切换。
+  }
+}
+
+export function getInterviewVoicePreference(sessionId: number): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return (
+      window.sessionStorage.getItem(`${voicePreferenceKeyPrefix}${sessionId}`) ===
+      "1"
+    );
+  } catch {
+    return false;
   }
 }
 

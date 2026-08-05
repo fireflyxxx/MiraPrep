@@ -29,6 +29,8 @@ import {
 } from "@/lib/api/interview-stream";
 import {
   clearInterviewAudioCursor,
+  getInterviewVoicePreference,
+  storeInterviewVoicePreference,
   streamVoiceInterview,
   VoiceSocketCloseError,
   type VoiceInterviewEvent,
@@ -74,6 +76,14 @@ function newAnswerId(): string {
       ? globalThis.crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `answer-${random}`;
+}
+
+function supportsVoiceMode(): boolean {
+  return (
+    typeof WebSocket !== "undefined" &&
+    !!navigator.mediaDevices?.getUserMedia &&
+    typeof AudioContext !== "undefined"
+  );
 }
 
 function sleep(delay: number, signal: AbortSignal): Promise<void> {
@@ -452,6 +462,12 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
       }
       setRuntimeToken(storedToken);
       setErrorMessage(null);
+      // 配置向导勾了「语音面试」就直接以语音模式进入；播放解锁要等用户第一次交互，
+      // TTSPlayer 每次 enqueue 都会重试 resume，所以这里不需要手势。
+      if (getInterviewVoicePreference(numericSessionId) && supportsVoiceMode()) {
+        setVoiceMode(true);
+        setVoiceNotice("语音模式已开启，按下麦克风后开始回答。");
+      }
 
       try {
         const restored = await getInterviewMessages(
@@ -553,6 +569,8 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
             // 这里必须自己把录音态清掉，否则提交按钮会一直禁用。
             setIsRecording(false);
             setVoiceMode(false);
+            // 别让配置里的语音偏好在刷新后把用户重新推回同一个失败的连接。
+            storeInterviewVoicePreference(numericSessionId, false);
             return;
           }
         } finally {
@@ -678,11 +696,7 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
   };
 
   const enableVoiceMode = () => {
-    if (
-      typeof WebSocket === "undefined" ||
-      !navigator.mediaDevices?.getUserMedia ||
-      typeof AudioContext === "undefined"
-    ) {
+    if (!supportsVoiceMode()) {
       setVoiceMode(false);
       setErrorMessage("当前浏览器不支持完整语音能力，已保留文字回答模式。");
       return;

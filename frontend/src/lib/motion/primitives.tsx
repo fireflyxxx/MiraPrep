@@ -100,18 +100,25 @@ export function CountUp({
   children?: (value: number) => ReactNode;
 }) {
   const reducedMotion = useReducedMotionSafe();
-  const [display, setDisplay] = useState(reducedMotion ? value : 0);
+  const [display, setDisplay] = useState(0);
   const previousRef = useRef(0);
+  // 后台标签页里 rAF 一帧都不会被调度，动画停在 0 上；那种时候直接显示真实数字，
+  // 免得用户看到的是「0 分」这种错的数。
+  const canAnimate =
+    !reducedMotion && !(typeof document !== "undefined" && document.hidden);
 
   useEffect(() => {
-    if (reducedMotion) {
+    if (!canAnimate) {
       previousRef.current = value;
       return;
     }
     const startValue = previousRef.current;
-    const startedAt = performance.now();
+    // 起点取第一帧的时间戳而不是 performance.now()：两者在浏览器里同源，
+    // 但混用会让任何时钟不一致直接算出负进度，把数字甩到目标值之外。
+    let startedAt = 0;
     let frame = 0;
     const tick = (now: number) => {
+      if (!startedAt) startedAt = now;
       const progress = Math.min(1, (now - startedAt) / duration);
       const eased = 1 - Math.pow(1 - progress, 3);
       const next = Math.round(startValue + (value - startValue) * eased);
@@ -122,8 +129,8 @@ export function CountUp({
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [duration, reducedMotion, value]);
+  }, [canAnimate, duration, value]);
 
-  const renderedValue = reducedMotion ? value : display;
+  const renderedValue = canAnimate ? display : value;
   return <>{children ? children(renderedValue) : renderedValue.toLocaleString("zh-CN")}</>;
 }

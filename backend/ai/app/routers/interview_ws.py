@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, WebSocket
+from starlette.websockets import WebSocketState
 
 from app.clients.business import BusinessCallbackClient
 from app.clients.llm import LlmClient
@@ -57,8 +58,18 @@ async def interview_voice_websocket(
             voice_enabled=voice,
         )
     except SpeechProviderConfigurationError:
-        await websocket.close(code=1013, reason="speech provider is not configured")
+        await _close(websocket, 1013, "speech provider is not configured")
     except Exception:
         # The runtime emits protocol-level errors after acceptance. Pre-accept auth,
         # replay, and provider failures use an application close code.
-        await websocket.close(code=4403)
+        await _close(websocket, 4403, "interview voice session rejected")
+
+
+async def _close(websocket: WebSocket, code: int, reason: str) -> None:
+    # Closing before the handshake completes reaches the browser as HTTP 403, which
+    # carries no close code — the client can only report a generic failure. Accept
+    # first so the diagnosis (provider missing vs. auth rejected) survives.
+    if websocket.application_state == WebSocketState.CONNECTING:
+        await websocket.accept()
+    if websocket.application_state != WebSocketState.DISCONNECTED:
+        await websocket.close(code=code, reason=reason)

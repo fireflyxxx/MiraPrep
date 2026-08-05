@@ -124,7 +124,9 @@ def test_speech_provider_factories_follow_asr_and_tts_configuration() -> None:
         asr_provider="deepgram",
         tts_provider="openai",
         deepgram_api_key="deepgram-secret",
+        deepgram_asr_endpoint="ws://127.0.0.1:9/listen",
         openai_api_key="openai-secret",
+        openai_base_url="http://127.0.0.1:9/v1",
     )
 
     asr = build_asr_provider(settings)
@@ -132,3 +134,6 @@ def test_speech_provider_factories_follow_asr_and_tts_configuration() -> None:
 
     assert isinstance(asr, DeepgramAsrProvider)
     assert isinstance(tts, OpenAiTtsProvider)
+    # 两家提供商的地址都必须可覆盖，否则自建/区域端点和联调只能改代码。
+    assert asr._endpoint == "ws://127.0.0.1:9/listen"  # noqa: SLF001
+    assert tts._base_url == "http://127.0.0.1:9/v1"  # noqa: SLF001

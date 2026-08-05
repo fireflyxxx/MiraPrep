@@ -84,6 +84,7 @@ services:
       DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:?set DEEPGRAM_API_KEY in .env.prod}
       DEEPGRAM_ASR_MODEL: ${DEEPGRAM_ASR_MODEL:-nova-3}
       DEEPGRAM_ASR_LANGUAGE: ${DEEPGRAM_ASR_LANGUAGE:-zh-CN}
+      DEEPGRAM_ASR_ENDPOINT: ${DEEPGRAM_ASR_ENDPOINT:-wss://api.deepgram.com/v1/listen}
       TTS_PROVIDER: ${TTS_PROVIDER:-openai}
       OPENAI_API_KEY: ${OPENAI_API_KEY:?set OPENAI_API_KEY in .env.prod}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
