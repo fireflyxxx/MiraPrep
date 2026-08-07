@@ -42,3 +42,19 @@ Object.defineProperty(globalThis, "IntersectionObserver", {
   writable: true,
   value: IntersectionObserverStub,
 });
+
+// jsdom 不实现 ResizeObserver，而组件靠它在字体加载后重新测量。
+class ResizeObserverStub implements ResizeObserver {
+  disconnect() {}
+  observe() {}
+  unobserve() {}
+}
+
+Object.defineProperty(window, "ResizeObserver", {
+  writable: true,
+  value: ResizeObserverStub,
+});
+Object.defineProperty(globalThis, "ResizeObserver", {
+  writable: true,
+  value: ResizeObserverStub,
+});

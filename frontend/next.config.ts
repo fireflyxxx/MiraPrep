@@ -27,6 +27,7 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   experimental: {
     viewTransition: true,
+    optimizeCss: true,
   },
   async headers() {
     return [
