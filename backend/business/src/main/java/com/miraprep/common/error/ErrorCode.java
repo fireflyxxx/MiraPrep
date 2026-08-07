@@ -11,6 +11,7 @@ public enum ErrorCode {
     INVALID_REFRESH_TOKEN(40102, HttpStatus.UNAUTHORIZED, "invalid refresh token"),
     FORBIDDEN(40300, HttpStatus.FORBIDDEN, "forbidden"),
     NOT_FOUND(40400, HttpStatus.NOT_FOUND, "not found"),
+    METHOD_NOT_ALLOWED(40500, HttpStatus.METHOD_NOT_ALLOWED, "method not allowed"),
     RATE_LIMITED(42900, HttpStatus.TOO_MANY_REQUESTS, "too many requests"),
     INTERNAL(50000, HttpStatus.INTERNAL_SERVER_ERROR, "internal server error");
 

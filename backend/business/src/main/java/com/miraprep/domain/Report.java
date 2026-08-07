@@ -12,6 +12,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import lombok.Getter;
@@ -57,4 +58,11 @@ public class Report extends BaseAuditableEntity {
 
     @Column(nullable = false)
     private boolean partial;
+
+    /** 分享链接的随机 token；null 表示分享关闭。关闭再开启会换一个新 token，老链接永久失效。 */
+    @Column(name = "share_token", length = 64, unique = true)
+    private String shareToken;
+
+    @Column(name = "shared_at")
+    private Instant sharedAt;
 }

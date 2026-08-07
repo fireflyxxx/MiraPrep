@@ -48,6 +48,8 @@ public class SecurityConfig {
                                 "/api/v1/auth/**",
                                 "/api/v1/health",
                                 "/api/v1/internal/**",
+                                // 分享链接：token 即凭证，只读，见 PublicReportController。
+                                "/api/v1/public/**",
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**")
                         .permitAll()

@@ -14,6 +14,28 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
 
     List<Report> findBySessionIdIn(Collection<Long> sessionIds);
 
+    Optional<Report> findByShareToken(String shareToken);
+
+    /**
+     * 同岗位历史趋势：只取完整报告，按结束时间正序，方便前端直接画折线。
+     * jobDirection / jobTitle 传 null 表示不按该维度过滤。
+     */
+    @Query(
+            """
+            select report from Report report
+            join fetch report.session session
+            where session.user.id = :userId
+              and session.deleted = false
+              and report.partial = false
+              and (:jobDirection is null or session.jobDirection = :jobDirection)
+              and (:jobTitle is null or session.jobTitle = :jobTitle)
+            order by session.endedAt asc, session.id asc
+            """)
+    List<Report> findHistory(
+            @Param("userId") Long userId,
+            @Param("jobDirection") String jobDirection,
+            @Param("jobTitle") String jobTitle);
+
     @Query(
             """
             select report from Report report

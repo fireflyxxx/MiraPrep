@@ -28,6 +28,10 @@ export const endpoints = {
   overviewStats: "/stats/overview",
   report: (sessionId: string) => `/reports/${sessionId}`,
   reportStatus: (sessionId: string) => `/reports/${sessionId}/status`,
+  reportExport: (sessionId: string) => `/reports/${sessionId}/export`,
+  reportShare: (sessionId: string) => `/reports/${sessionId}/share`,
+  publicReport: (shareToken: string) => `/public/reports/${shareToken}`,
+  statsHistory: "/stats/history",
 } as const;
 
 export function toApiUrl(path: string): string {
