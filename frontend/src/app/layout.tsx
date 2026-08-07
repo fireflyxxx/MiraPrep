@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import { Noto_Sans_SC, Space_Grotesk } from "next/font/google";
-import RouteTransition from "@/components/RouteTransition";
 import { ThemeProvider } from "@/components/theme-provider";
-import { Toaster } from "@/components/ui/sonner";
-import QueryProvider from "@/lib/api/query-provider";
+import LandingAwareProviders from "./LandingAwareProviders";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -40,16 +38,16 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-screen bg-background font-sans text-foreground antialiased">
+        {/* ponytail: ThemeProvider stays in the server-rendered layout so next-themes
+            emits its pre-paint script during SSR; mounting it inside the lazily
+            imported AppRuntime made React warn about a client-rendered <script>. */}
         <ThemeProvider
           attribute="data-theme"
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
         >
-          <QueryProvider>
-            <RouteTransition>{children}</RouteTransition>
-          </QueryProvider>
-          <Toaster richColors closeButton />
+          <LandingAwareProviders>{children}</LandingAwareProviders>
         </ThemeProvider>
       </body>
     </html>

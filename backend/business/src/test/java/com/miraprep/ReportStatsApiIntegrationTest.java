@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -130,6 +131,7 @@ class ReportStatsApiIntegrationTest {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.paths['/api/v1/reports/{sessionId}']").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/reports/{sessionId}/export']").exists())
                 .andExpect(jsonPath("$.paths['/api/v1/stats/overview']").exists())
                 .andExpect(jsonPath(
                                 "$.paths['/api/v1/internal/interviews/{id}/grade-result']")
@@ -257,6 +259,63 @@ class ReportStatsApiIntegrationTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(40300));
         mockMvc.perform(get("/api/v1/reports/{id}", 999999L).with(as(other)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(40400));
+    }
+
+    @Test
+    void pdfExportRendersChineseContentAndKeepsTheSameOwnershipRulesAsTheReport()
+            throws Exception {
+        User owner = createUser();
+        User other = createUser();
+        InterviewSession session = session(owner, Instant.parse("2026-07-20T10:30:00Z"), false);
+        // emoji 不在内嵌字体里：导出必须降级成占位符，而不是整个 500。
+        Question question = question(session, 1, "请介绍你在 MiraPrep 中做的可靠回调。💡");
+        candidateAnswer(question, "我用数据库事务和行锁保证幂等。", null);
+        postGradeResult(session.getId(), gradePayload(question.getId(), 82, "A", false))
+                .andExpect(status().isOk());
+
+        byte[] pdf = mockMvc.perform(get("/api/v1/reports/{id}/export", session.getId())
+                        .with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "application/pdf"))
+                .andExpect(header().string(
+                        "Content-Disposition",
+                        "attachment; filename=\"MiraPrep-report-%d.pdf\"".formatted(session.getId())))
+                .andReturn()
+                .getResponse()
+                .getContentAsByteArray();
+
+        try (org.apache.pdfbox.pdmodel.PDDocument document =
+                org.apache.pdfbox.pdmodel.PDDocument.load(pdf)) {
+            String text = new org.apache.pdfbox.text.PDFTextStripper().getText(document);
+            org.assertj.core.api.Assertions.assertThat(text)
+                    .contains("Java 工程师 面试报告")
+                    .contains("综合评级 A")
+                    // DECIMAL 列取出来是 82.00，报告里不能出现小数位。
+                    .contains("总分 82 / 100")
+                    .doesNotContain("82.00")
+                    .contains("得分 8/10")
+                    .contains("专业知识 75")
+                    .contains("岗位匹配 65")
+                    .contains("总体表现稳定")
+                    .contains("项目讲解清楚")
+                    .contains("请介绍你在 MiraPrep 中做的可靠回调。")
+                    .contains("我用数据库事务和行锁保证幂等。")
+                    .contains("可结合 MiraPrep 项目说明事务与行锁。")
+                    .contains("如果并发到达呢？")
+                    .contains("先说明风险，再说明方案");
+        }
+
+        mockMvc.perform(get("/api/v1/reports/{id}/export", session.getId()).with(as(other)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40300));
+        mockMvc.perform(get("/api/v1/reports/{id}/export", 999999L).with(as(owner)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(40400));
+        // 报告还没生成时导出同样是 404，前端不会拿到一份空 PDF。
+        InterviewSession pending = session(owner, Instant.parse("2026-07-21T10:30:00Z"), false);
+        mockMvc.perform(get("/api/v1/reports/{id}/export", pending.getId()).with(as(owner)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(40400));
     }

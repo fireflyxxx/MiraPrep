@@ -358,6 +358,12 @@ body {
   .mira-button:active {
     transform: none !important;
   }
+
+  /* Motion 的媒体查询在 hydration 后才稳定；CSS 兜底保证首屏外内容不会停在隐藏态。 */
+  .mira-reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }
 
 /* ---------------------------------------------------------------------

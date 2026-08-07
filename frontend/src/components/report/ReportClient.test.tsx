@@ -117,10 +117,24 @@ function statusResponse(status: "none" | "grading" | "ready" | "failed" = "ready
   );
 }
 
+function envelope(data: unknown) {
+  return new Response(JSON.stringify({ code: 0, message: "ok", data }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/** 报告页除了报告本身，还会拉分享开关和同岗位历史，测试替身要把三条路都答上。 */
 function reportFetch(body = report, ok = true) {
-  return vi.fn(async (input: RequestInfo | URL) =>
-    String(input).endsWith("/status") ? statusResponse() : response(body, ok),
-  );
+  return vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/share")) {
+      return envelope({ enabled: false, shareToken: null, shareUrl: null });
+    }
+    if (url.includes("/stats/history")) return envelope({ points: [] });
+    if (url.endsWith("/status")) return statusResponse();
+    return response(body, ok);
+  });
 }
 
 function renderReport() {
@@ -198,7 +212,12 @@ describe("ReportClient", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
-        if (String(input).endsWith("/status")) return statusResponse();
+        const url = String(input);
+        if (url.endsWith("/share")) {
+          return envelope({ enabled: false, shareToken: null, shareUrl: null });
+        }
+        if (url.includes("/stats/history")) return envelope({ points: [] });
+        if (url.endsWith("/status")) return statusResponse();
         reportCalls += 1;
         return reportCalls === 1 ? response(report, false) : response();
       }),
@@ -254,5 +273,44 @@ describe("ReportClient", () => {
     expect(screen.getAllByText("未作答")).not.toHaveLength(0);
     expect(screen.getByText("本题未作答")).toBeInTheDocument();
     expect(screen.queryByText(/用时 未记录/)).not.toBeInTheDocument();
+  });
+
+  it("exports the report as a pdf and shows a loading state while it renders", async () => {
+    let release: (value: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/export")) return pending;
+        if (url.endsWith("/share")) {
+          return envelope({ enabled: false, shareToken: null, shareUrl: null });
+        }
+        if (url.includes("/stats/history")) return envelope({ points: [] });
+        return url.endsWith("/status") ? statusResponse() : response();
+      }),
+    );
+    const createObjectURL = vi.fn(() => "blob:report");
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    renderReport();
+    const button = await screen.findByRole("button", { name: "导出 PDF" });
+    await userEvent.click(button);
+
+    expect(await screen.findByRole("button", { name: "导出中…" })).toBeDisabled();
+
+    release(
+      new Response(new Blob(["%PDF-1.4"]), {
+        status: 200,
+        headers: { "Content-Type": "application/pdf" },
+      }),
+    );
+
+    expect(await screen.findByRole("button", { name: "导出 PDF" })).toBeEnabled();
+    expect(click).toHaveBeenCalledTimes(1);
+    click.mockRestore();
   });
 });

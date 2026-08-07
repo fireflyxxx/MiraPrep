@@ -259,7 +259,9 @@ MiraPrep 是一款基于大语言模型的仿真模拟面试产品。用户上�
 **未来规划**
 - **五维雷达图**替代/补充四维条形；左侧题目锚点目录（sticky）。
 - 逐题卡补充：所属阶段/考察点标签、单题 0–10 分颜色条、思考+回答耗时对比（超时标橙）、参考答案「深入阅读」完整版、**追问链缩进时间线**、语音回答转写 + 原音回放。
-- 「重练此题」迷你练习入口；报告 **PDF 导出**（按钮已在，功能待接）；分享链接（脱敏）；同岗位历史得分折线对比。
+- 「重练此题」迷你练习入口。
+- 报告 **PDF 导出**已在 T-118 落地：服务端渲染，含摘要、五维雷达与逐题详情，中文字体内嵌。
+- **分享链接与历史对比**已在 T-119 落地：报告页顶栏「分享」开关生成公开只读链接（服务端脱敏姓名/邮箱/电话/录音），关闭即永久失效；正文中部新增同岗位得分折线，空心圈标出本场位置。
 
 ---
 
@@ -431,6 +433,9 @@ QuestionReview(id, report_id, question_id, score, reference_answer,
 | GET | `/interviews?page&size&status?` | 面试记录分页列表（含会话/报告状态） |
 | GET | `/reports/{sessionId}` | 报告详情 |
 | GET | `/reports/{sessionId}/export` | PDF 导出 |
+| GET/POST | `/reports/{sessionId}/share` | 查询 / 开关分享链接（关闭即吊销 token）|
+| GET | `/public/reports/{shareToken}` | 公开只读报告（脱敏，**无需登录**）|
+| GET | `/stats/history?jobDirection=&jobTitle=` | 同岗位历史得分趋势 |
 | GET | `/stats/overview` | 工作台区统计、加权综合评级与五维均值 |
 
 > 各接口请求/响应的完整 JSON 契约以 `docs/tasks/` 对应任务文件为准（如 T-010 认证、T-020 简历、T-030 会话、T-106 报告/统计）。

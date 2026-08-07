@@ -33,7 +33,31 @@ export interface StatsOverview {
   totalPracticeMinutes: number;
 }
 
+export interface HistoryPoint {
+  sessionId: number;
+  date: string;
+  score: number;
+  grade: Grade;
+}
+
 export const overviewStatsKey = ["stats", "overview"] as const;
+export const historyStatsKey = (jobDirection: string, jobTitle: string) =>
+  ["stats", "history", jobDirection, jobTitle] as const;
+
+/** 同岗位历史得分趋势；后端已按时间正序返回，前端拿到即可直接画。 */
+export function useHistoryStats(jobDirection: string, jobTitle: string) {
+  return useQuery({
+    queryKey: historyStatsKey(jobDirection, jobTitle),
+    queryFn: () => {
+      const query = new URLSearchParams();
+      if (jobDirection) query.set("jobDirection", jobDirection);
+      if (jobTitle) query.set("jobTitle", jobTitle);
+      const suffix = query.size ? `?${query}` : "";
+      return apiClient<{ points: HistoryPoint[] }>(`${endpoints.statsHistory}${suffix}`);
+    },
+    enabled: jobTitle.length > 0 || jobDirection.length > 0,
+  });
+}
 
 export function useOverviewStats() {
   return useQuery({

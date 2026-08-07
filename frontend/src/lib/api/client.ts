@@ -12,6 +12,8 @@ type ApiRequestOptions = RequestInit & {
   skipAuthRefresh?: boolean;
   /** 登录/注册这类端点必须匿名发出：带上过期的旧 token 会被网关先拦成 401，用户再也登不回来。 */
   anonymous?: boolean;
+  /** 文件下载类接口（PDF 导出）：成功时响应体是二进制而不是 JSON 信封，直接拿 Blob。 */
+  blob?: boolean;
 };
 type ApiErrorHandler = (error: ApiError) => void;
 
@@ -128,7 +130,12 @@ async function request<T>(
   options: ApiRequestOptions,
   hasRetriedAfterRefresh: boolean,
 ): Promise<T> {
-  const { skipAuthRefresh = false, anonymous = false, ...requestOptions } = options;
+  const {
+    skipAuthRefresh = false,
+    anonymous = false,
+    blob = false,
+    ...requestOptions
+  } = options;
   const response = await fetch(toApiUrl(path), {
     ...requestOptions,
     credentials: requestOptions.credentials ?? "include",
@@ -136,6 +143,10 @@ async function request<T>(
   });
   if (response.status === 204) {
     return undefined as T;
+  }
+  // 二进制接口只有成功时才是二进制；出错时后端仍然返回统一 JSON 信封，继续走下面的解析。
+  if (blob && response.ok) {
+    return (await response.blob()) as T;
   }
   const envelope = await parseEnvelope(response);
 

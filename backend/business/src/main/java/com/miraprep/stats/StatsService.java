@@ -6,6 +6,7 @@ import com.miraprep.domain.Report;
 import com.miraprep.interview.InterviewSessionRepository;
 import com.miraprep.report.ReportRepository;
 import com.miraprep.report.dto.GradeResultRequest;
+import com.miraprep.stats.dto.StatsHistoryResponse;
 import com.miraprep.stats.dto.StatsOverviewResponse;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -96,6 +97,27 @@ public class StatsService {
                 dimensions,
                 trend,
                 practiceMinutes);
+    }
+
+    /**
+     * 同岗位历史得分趋势。两个筛选参数都可以省略：都不传就是「我的全部完整报告」。
+     * 只统计完整报告——中途放弃的场次分数不可比，混进折线里会让趋势失真。
+     */
+    @Transactional(readOnly = true)
+    public StatsHistoryResponse history(Long userId, String jobDirection, String jobTitle) {
+        List<StatsHistoryResponse.HistoryPoint> points =
+                reportRepository.findHistory(userId, blankToNull(jobDirection), blankToNull(jobTitle)).stream()
+                        .map(report -> new StatsHistoryResponse.HistoryPoint(
+                                report.getSession().getId(),
+                                report.getSession().getEndedAt(),
+                                report.getTotalScore().setScale(0, RoundingMode.HALF_UP).intValue(),
+                                report.getGrade().name()))
+                        .toList();
+        return new StatsHistoryResponse(points);
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private GradeResultRequest.DimensionScores averageDimensions(List<Report> reports) {

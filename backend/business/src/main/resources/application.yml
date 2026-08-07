@@ -52,6 +52,9 @@ app:
     download-url-expiry-seconds: ${OSS_DOWNLOAD_URL_EXPIRY_SECONDS:900}
   ai-service:
     base-url: ${AI_SERVICE_BASE_URL:http://localhost:8000}
+  share:
+    # 分享链接是给别人点的，所以拼的是前端站点地址，不是后端 API 地址。
+    base-url: ${SHARE_BASE_URL:http://localhost:3000}
   resume:
     upload-window: ${RESUME_UPLOAD_WINDOW:3600}
     upload-max-attempts: ${RESUME_UPLOAD_MAX_ATTEMPTS:10}

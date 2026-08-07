@@ -191,7 +191,7 @@ find infra/backups -maxdepth 3 -type f -ls
 
 ### 4. 上线与重启冒烟清单
 
-以下项目需要在真实域名、真实 SMTP 收件箱和生产服务器上逐项留证；T-118 尚未上线时 PDF 项可标记为“不适用”：
+以下项目需要在真实域名、真实 SMTP 收件箱和生产服务器上逐项留证：
 
 - [ ] 首页与 `/auth` 使用有效 HTTPS，证书链正常，无浏览器 mixed-content/CSP 错误
 - [ ] 注册验证码真实送达，邮件正文和服务日志不泄露其他用户验证码
@@ -200,7 +200,8 @@ find infra/backups -maxdepth 3 -type f -ls
 - [ ] 面试 SSE 首 token 持续到达、无批量缓冲；中途断网一次后按最后 `seq` 恢复且不重复
 - [ ] 限流返回 HTTP 429 和业务码 `42900`
 - [ ] 公网 `/api/v1/internal/*` 与 `/internal/*` 都返回 404
-- [ ] 若已完成 T-118，PDF 可导出并正常打开
+- [ ] 报告页「导出 PDF」可下载，中文显示正常、雷达与逐题详情完整（T-118）
+- [ ] 报告页开启分享后，退出登录（或换浏览器）能打开公开链接且看不到姓名/邮箱/电话/录音；关闭分享后该链接返回「链接已失效」（T-119）
 - [ ] `infra/backup.sh` 生成 MySQL、MinIO 和校验和文件
 - [ ] 执行 `docker compose ... restart` 后所有服务恢复 healthy，以上用户数据与 MinIO 对象仍存在
 

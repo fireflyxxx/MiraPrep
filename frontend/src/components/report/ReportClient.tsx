@@ -1,13 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import Logo from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { useReport, type FollowUpReview, type ReportQuestion } from "@/lib/api/report";
-import { useOverviewStats, type Grade } from "@/lib/api/stats";
+import {
+  useExportReport,
+  useReport,
+  type FollowUpReview,
+  type InterviewReport,
+  type ReportQuestion,
+} from "@/lib/api/report";
+import { useOverviewStats, type DimensionScores, type Grade } from "@/lib/api/stats";
 import { difficultyLabel, phaseLabel } from "@/lib/interview-options";
+import HistoryTrend from "./HistoryTrend";
 import RadarChart from "./RadarChart";
+import ShareDialog from "./ShareDialog";
 
 const gradeClasses: Record<Grade, string> = {
   S: "text-grade-s",
@@ -93,7 +101,6 @@ function ReportGenerating() {
 }
 
 export default function ReportClient({ sessionId }: { sessionId: string }) {
-  const [expanded, setExpanded] = useState(false);
   const { data, status, isPending, isError, refetch } = useReport(sessionId);
   const { data: overview } = useOverviewStats();
 
@@ -133,110 +140,151 @@ export default function ReportClient({ sessionId }: { sessionId: string }) {
     );
   }
 
-  const visible = expanded ? data.questions : data.questions.slice(0, 3);
-  const hiddenCount = data.questions.length - visible.length;
-
   return (
     <div data-session={sessionId} className="min-h-screen bg-surface-subtle">
-      <ReportHeader />
-      <main className="animate-mira-page-in mx-auto max-w-[920px] px-6 pt-10 pb-20 md:px-8">
-        <div className="mb-2 flex flex-wrap items-center gap-2 font-display text-[13px] text-muted-foreground">
-          <span>INTERVIEW REPORT · {formatDate(data.createdAt)}</span>
-          {data.partial ? (
-            <span className="rounded-full bg-grade-b/15 px-2.5 py-1 font-medium text-grade-b">
-              部分完成
-            </span>
-          ) : null}
-        </div>
-        <h1 className="mb-7 text-[30px] font-bold tracking-[-0.02em]">
-          {data.jobTitle} 面试报告
-        </h1>
-
-        <section className="mb-5 grid gap-6 rounded-[20px] border border-border-subtle bg-surface p-6 md:grid-cols-[220px_1fr] md:p-7">
-          <div className="flex flex-col justify-center text-center md:border-r md:border-muted md:pr-7">
-            <div
-              className={`font-display text-[60px] leading-none font-bold ${gradeClasses[data.grade]}`}
-            >
-              {data.grade}
-            </div>
-            <div className="mt-1.5 text-[12.5px] text-muted-foreground">综合评级</div>
-            <div className="mt-4 font-display text-3xl font-bold tabular-nums">
-              {data.totalScore}
-              <span className="text-sm font-normal text-muted-foreground"> / 100</span>
-            </div>
-            <div className="mt-4 space-y-1 text-xs text-muted-foreground">
-              <div>
-                {difficultyLabel(data.config.difficulty)} · {data.config.durationMin} 分钟
-              </div>
-              <div>{data.questions.length} 道题目</div>
-            </div>
-          </div>
-          {data.dimensionScores ? (
-            <RadarChart
-              scores={data.dimensionScores}
-              historyScores={overview?.dimensionScores}
-            />
-          ) : (
-            <div className="flex min-h-[300px] items-center justify-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground">
-              这份历史报告暂无完整的五维数据
-            </div>
-          )}
-        </section>
-
-        <section className="mb-5 rounded-2xl border border-primary/20 bg-primary-soft px-6 py-5">
-          <h2 className="mb-2 text-[13px] font-semibold text-primary">总体评语</h2>
-          <p className="text-sm leading-[1.7]">{data.summary}</p>
-        </section>
-
-        <div className="mb-9 grid gap-4 sm:grid-cols-2">
-          <SummaryList title="表现亮点" items={data.highlights} tone="positive" />
-          <SummaryList title="提升方向" items={data.weaknesses} tone="warning" />
-        </div>
-
-        <div className="mb-[18px] flex items-center justify-between">
-          <h2 className="text-[19px] font-semibold">逐题复盘</h2>
-          <span className="text-[13px] text-muted-foreground">
-            共 {data.questions.length} 题
-          </span>
-        </div>
-
-        {data.questions.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border bg-surface p-10 text-center text-sm text-muted-foreground">
-            本次没有可复盘的题目
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3.5">
-            {visible.map((question) => (
-              <QuestionReview key={question.questionId} question={question} />
-            ))}
-
-            {hiddenCount > 0 ? (
-              <button
-                type="button"
-                onClick={() => setExpanded(true)}
-                className="mira-button cursor-pointer p-2 text-center text-[13.5px] text-primary"
-                aria-label={`展开其余 ${hiddenCount} 题`}
-              >
-                展开其余 {hiddenCount} 题 ↓
-              </button>
-            ) : null}
-            {expanded ? (
-              <button
-                type="button"
-                onClick={() => setExpanded(false)}
-                className="mira-button cursor-pointer p-2 text-center text-[13.5px] text-muted-foreground"
-              >
-                收起 ↑
-              </button>
-            ) : null}
-          </div>
-        )}
-      </main>
+      <ReportHeader sessionId={sessionId} />
+      <ReportBody
+        report={data}
+        historyScores={overview?.dimensionScores}
+        trend={
+          <HistoryTrend
+            jobDirection={data.config.jobDirection}
+            jobTitle={data.config.jobTitle}
+            currentSessionId={data.sessionId}
+          />
+        }
+      />
     </div>
   );
 }
 
-function ReportHeader() {
+/**
+ * 报告正文。本人视角的 `/report/[sessionId]` 和公开分享页共用这一份渲染，
+ * 差异只有两处：公开页不传 `trend`（历史是本人数据），以及后端已经把音频等字段脱敏成 null。
+ */
+export function ReportBody({
+  report,
+  historyScores,
+  trend,
+}: {
+  report: InterviewReport;
+  historyScores?: DimensionScores | null;
+  trend?: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? report.questions : report.questions.slice(0, 3);
+  const hiddenCount = report.questions.length - visible.length;
+
+  return (
+    <main className="animate-mira-page-in mx-auto max-w-[920px] px-6 pt-10 pb-20 md:px-8">
+      <div className="mb-2 flex flex-wrap items-center gap-2 font-display text-[13px] text-muted-foreground">
+        <span>INTERVIEW REPORT · {formatDate(report.createdAt)}</span>
+        {report.partial ? (
+          <span className="rounded-full bg-grade-b/15 px-2.5 py-1 font-medium text-grade-b">
+            部分完成
+          </span>
+        ) : null}
+      </div>
+      <h1 className="mb-7 text-[30px] font-bold tracking-[-0.02em]">
+        {report.jobTitle} 面试报告
+      </h1>
+
+      <section className="mb-5 grid gap-6 rounded-[20px] border border-border-subtle bg-surface p-6 md:grid-cols-[220px_1fr] md:p-7">
+        <div className="flex flex-col justify-center text-center md:border-r md:border-muted md:pr-7">
+          <div
+            className={`font-display text-[60px] leading-none font-bold ${gradeClasses[report.grade]}`}
+          >
+            {report.grade}
+          </div>
+          <div className="mt-1.5 text-[12.5px] text-muted-foreground">综合评级</div>
+          <div className="mt-4 font-display text-3xl font-bold tabular-nums">
+            {report.totalScore}
+            <span className="text-sm font-normal text-muted-foreground"> / 100</span>
+          </div>
+          <div className="mt-4 space-y-1 text-xs text-muted-foreground">
+            <div>
+              {difficultyLabel(report.config.difficulty)} · {report.config.durationMin} 分钟
+            </div>
+            <div>{report.questions.length} 道题目</div>
+          </div>
+        </div>
+        {report.dimensionScores ? (
+          <RadarChart scores={report.dimensionScores} historyScores={historyScores} />
+        ) : (
+          <div className="flex min-h-[300px] items-center justify-center rounded-2xl border border-dashed border-border text-sm text-muted-foreground">
+            这份历史报告暂无完整的五维数据
+          </div>
+        )}
+      </section>
+
+      <section className="mb-5 rounded-2xl border border-primary/20 bg-primary-soft px-6 py-5">
+        <h2 className="mb-2 text-[13px] font-semibold text-primary">总体评语</h2>
+        <p className="text-sm leading-[1.7]">{report.summary}</p>
+      </section>
+
+      <div className="mb-9 grid gap-4 sm:grid-cols-2">
+        <SummaryList title="表现亮点" items={report.highlights} tone="positive" />
+        <SummaryList title="提升方向" items={report.weaknesses} tone="warning" />
+      </div>
+
+      {trend ? (
+        <section className="mb-9 rounded-[20px] border border-border-subtle bg-surface p-6">
+          <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-[19px] font-semibold">同岗位历史趋势</h2>
+            <span className="text-[13px] text-muted-foreground">
+              {report.config.jobTitle} · 仅统计完整场次
+            </span>
+          </div>
+          <p className="mb-4 text-[13px] text-muted-foreground">
+            空心圈标出的是本场成绩在整条走势里的位置。
+          </p>
+          {trend}
+        </section>
+      ) : null}
+
+      <div className="mb-[18px] flex items-center justify-between">
+        <h2 className="text-[19px] font-semibold">逐题复盘</h2>
+        <span className="text-[13px] text-muted-foreground">
+          共 {report.questions.length} 题
+        </span>
+      </div>
+
+      {report.questions.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border bg-surface p-10 text-center text-sm text-muted-foreground">
+          本次没有可复盘的题目
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3.5">
+          {visible.map((question) => (
+            <QuestionReview key={question.questionId} question={question} />
+          ))}
+
+          {hiddenCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="mira-button cursor-pointer p-2 text-center text-[13.5px] text-primary"
+              aria-label={`展开其余 ${hiddenCount} 题`}
+            >
+              展开其余 {hiddenCount} 题 ↓
+            </button>
+          ) : null}
+          {expanded ? (
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              className="mira-button cursor-pointer p-2 text-center text-[13.5px] text-muted-foreground"
+            >
+              收起 ↑
+            </button>
+          ) : null}
+        </div>
+      )}
+    </main>
+  );
+}
+
+function ReportHeader({ sessionId }: { sessionId?: string }) {
   return (
     <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border-subtle bg-surface/92 px-4 py-4 backdrop-blur-[12px] sm:px-6 md:px-7">
       <div className="flex items-center gap-3 sm:gap-4">
@@ -251,13 +299,8 @@ function ReportHeader() {
       </div>
       <div className="flex items-center gap-2.5">
         <ThemeToggle />
-        <button
-          disabled
-          title="报告导出将在 T-118 开放"
-          className="hidden rounded-[9px] border border-border bg-surface px-4 py-2 text-[13px] text-muted-foreground opacity-60 sm:block"
-        >
-          导出 PDF
-        </button>
+        {sessionId ? <ShareDialog sessionId={sessionId} /> : null}
+        {sessionId ? <ExportButton sessionId={sessionId} /> : null}
         <Link
           href="/interview/setup"
           transitionTypes={["nav-forward"]}
@@ -267,6 +310,22 @@ function ReportHeader() {
         </Link>
       </div>
     </header>
+  );
+}
+
+/** 导出只在报告已经就绪时出现：报告还没生成时后端也只会返回 404。 */
+function ExportButton({ sessionId }: { sessionId: string }) {
+  const exportReport = useExportReport(sessionId);
+  return (
+    <button
+      type="button"
+      onClick={() => exportReport.mutate()}
+      disabled={exportReport.isPending}
+      aria-busy={exportReport.isPending}
+      className="mira-button hidden rounded-[9px] border border-border bg-surface px-4 py-2 text-[13px] text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:block"
+    >
+      {exportReport.isPending ? "导出中…" : "导出 PDF"}
+    </button>
   );
 }
 

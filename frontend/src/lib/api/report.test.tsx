@@ -1,8 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, renderHook, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useReport } from "./report";
+import { toast } from "sonner";
+import { useExportReport, useReport } from "./report";
+
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
 function wrapper({ children }: { children: ReactNode }) {
   return (
@@ -106,5 +109,65 @@ describe("useReport", () => {
 
     expect(await screen.findByText("error")).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useExportReport", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.mocked(toast.error).mockReset();
+  });
+
+  it("downloads the pdf blob under a session-scoped file name", async () => {
+    const pdf = new Blob(["%PDF-1.4"], { type: "application/pdf" });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(pdf, { status: 200, headers: { "Content-Type": "application/pdf" } }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const createObjectURL = vi.fn(() => "blob:report");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
+    const clicked: HTMLAnchorElement[] = [];
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        clicked.push(this);
+      });
+
+    const { result } = renderHook(() => useExportReport("23"), { wrapper });
+    result.current.mutate();
+
+    await waitFor(() => expect(clicked).toHaveLength(1));
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      "http://localhost:8080/api/v1/reports/23/export",
+    );
+    expect(clicked[0].download).toBe("MiraPrep-report-23.pdf");
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:report");
+    // 临时的 <a> 不能留在页面里。
+    expect(document.querySelector("a[download]")).toBeNull();
+    expect(toast.error).not.toHaveBeenCalled();
+    click.mockRestore();
+  });
+
+  it("surfaces the backend message instead of downloading an error envelope", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ code: 40300, message: "forbidden", data: null }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const createObjectURL = vi.fn();
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
+
+    const { result } = renderHook(() => useExportReport("23"), { wrapper });
+    result.current.mutate();
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("forbidden"));
+    expect(createObjectURL).not.toHaveBeenCalled();
   });
 });
