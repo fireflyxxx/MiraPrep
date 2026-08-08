@@ -55,6 +55,16 @@ export function register(input: RegisterInput): Promise<AuthResponse> {
   return apiClient<AuthResponse>(endpoints.register, jsonRequest(input));
 }
 
+/** T-120：把 Google Identity Services 给的 ID Token 换成本站登录态。 */
+export function loginWithGoogle(idToken: string): Promise<AuthResponse> {
+  return apiClient<AuthResponse>(endpoints.googleLogin, jsonRequest({ idToken }));
+}
+
+/** T-120：把 GitHub 授权码换成本站登录态。 */
+export function loginWithGithub(code: string): Promise<AuthResponse> {
+  return apiClient<AuthResponse>(endpoints.githubLogin, jsonRequest({ code }));
+}
+
 export function sendVerificationCode(email: string): Promise<Record<string, never>> {
   return apiClient<Record<string, never>>(
     endpoints.sendCode,

@@ -21,6 +21,8 @@ export const endpoints = {
   register: "/auth/register",
   refresh: "/auth/refresh",
   sendCode: "/auth/send-code",
+  googleLogin: "/auth/oauth/google",
+  githubLogin: "/auth/oauth/github",
   me: "/users/me",
   myProfile: "/users/me/profile",
   resumes: "/resumes",

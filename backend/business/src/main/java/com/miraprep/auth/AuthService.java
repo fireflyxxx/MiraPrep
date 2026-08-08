@@ -12,6 +12,7 @@ import com.miraprep.user.dto.UserResponse;
 import io.jsonwebtoken.JwtException;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -62,7 +63,7 @@ public class AuthService {
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setNickname(request.nickname());
         userRepository.save(user);
-        return toAuthResponse(user);
+        return issueTokens(user);
     }
 
     @Transactional(readOnly = true)
@@ -76,7 +77,7 @@ public class AuthService {
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
-        return toAuthResponse(user);
+        return issueTokens(user);
     }
 
     public RefreshResponse refresh(String refreshToken) {
@@ -95,7 +96,30 @@ public class AuthService {
         }
     }
 
-    private AuthResponse toAuthResponse(User user) {
+    /**
+     * 第三方登录共用的落库口子（T-120）：邮箱命中就关联已有账号，没命中才建号。
+     * Google 与 GitHub 的验签方式完全不同，但到了这一步只剩「邮箱 + 昵称 + 头像」，所以合并在这里。
+     */
+    @Transactional
+    public User linkOrCreateOAuthUser(String email, String nickname, String avatar) {
+        String normalized = normalizeEmail(email);
+        return userRepository.findByEmail(normalized).orElseGet(() -> {
+            User user = new User();
+            user.setEmail(normalized);
+            user.setNickname(
+                    nickname == null || nickname.isBlank()
+                            ? normalized.substring(0, normalized.indexOf('@'))
+                            : nickname);
+            user.setAvatar(avatar == null || avatar.isBlank() ? null : avatar);
+            // ponytail: password_hash 是 NOT NULL，这里塞一个不可能被猜中的随机哈希，省一次 migration。
+            // 代价：这类账号没有密码，因而走不了「输密码删号」；做账号绑定/密码找回时改成可空列。
+            user.setPasswordHash(passwordEncoder.encode(UUID.randomUUID().toString()));
+            return userRepository.save(user);
+        });
+    }
+
+    /** 签发登录态。邮箱密码登录与第三方登录（T-120）共用同一套 token 签发逻辑。 */
+    public AuthResponse issueTokens(User user) {
         IssuedRefreshToken refreshToken = jwtService.createRefreshToken(user.getId());
         tokenStore.put(refreshKey(refreshToken.tokenId()), Long.toString(user.getId()), jwtService.refreshTtl());
         return new AuthResponse(jwtService.createAccessToken(user.getId()), refreshToken.value(), UserResponse.from(user));

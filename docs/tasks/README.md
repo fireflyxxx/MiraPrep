@@ -51,7 +51,7 @@
 | [T-117](./T-117-landing-final.md) | 落地页完整版（FAQ 手风琴、滚动动画、信任数据） | Frontend | M3 | 1d | T-006 |
 | [T-118](./T-118-report-export.md) | 报告 PDF 导出 | Full-stack | M3 | 1d | T-106 |
 | [T-119](./T-119-share-history.md) | 报告分享链接 + 历史对比 | Full-stack | M3 | 1.5d | T-106 |
-| [T-120](./T-120-oauth.md) | 第三方登录（GitHub / Google OAuth） | Full-stack | M3 | 1d | T-010, T-011 |
+| [T-120](./T-120-oauth.md) | 第三方登录（Google + GitHub OAuth） | Full-stack | M3 | 1d | T-010, T-011 |
 | [T-121](./T-121-question-retry.md) | 「重练此题」迷你练习（复用面试子图 + 单题批改 chain） | Full-stack | M3 | 1.5d | T-040, T-101, T-105, T-108 |
 | [T-122](./T-122-question-bank-rag.md) | 本地题库 + RAG 检索增强出题（LangChain retriever + Chroma，接入大纲生成） | Backend-AI | M3 | 1.5d | T-031, T-101 |
 | [T-123](./T-123-observability.md) | 可观测：会话级 trace + Token 成本统计（LangChain callback） | Backend-AI | 横切 | 1d | T-040, T-101 |
@@ -131,4 +131,5 @@ Spring 报告回调”已经通过两端自动化测试；真实 LLM、MySQL 和
 | T-117 | DONE | 落地页完整版已合并 |
 | T-118 | REVIEW | PDF 导出已实现并在本地真实链路验收（Spring 76 tests / 前端 185 tests 通过），待提交发布 |
 | T-119 | REVIEW | 分享链接（脱敏公开只读）与同岗位历史折线已实现，浏览器走通「开启→匿名访问→关闭失效」全流程（Spring 81 tests / 前端 195 tests 通过），待提交发布 |
-| T-120~T-123 | TODO | 从 T-120 继续 |
+| T-120 | REVIEW | Google（GIS ID Token）与 GitHub（授权码 + state）登录已实现，微信占位已删；Spring 108 tests / 前端 209 tests 通过；两家真实 client id 的端到端走查待做 |
+| T-121~T-123 | TODO | 从 T-121 继续 |
