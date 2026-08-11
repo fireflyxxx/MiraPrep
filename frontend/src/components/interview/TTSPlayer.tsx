@@ -10,14 +10,31 @@ export interface TTSPlayerHandle {
   stop(): void;
 }
 
+export interface TTSPlayerLabels {
+  mute: string;
+  unmute: string;
+  idle: string;
+  muted: string;
+  speaking: string;
+}
+
+const defaultLabels: TTSPlayerLabels = {
+  mute: "静音面试官语音",
+  unmute: "开启面试官语音",
+  idle: "语音开启",
+  muted: "已静音",
+  speaking: "播放中",
+};
+
 function sampleRateFor(format: string): number {
   const match = /pcm16\/(\d+)k/i.exec(format);
   return match ? Number(match[1]) * 1_000 : 24_000;
 }
 
 const TTSPlayer = forwardRef<TTSPlayerHandle, {
+  labels?: TTSPlayerLabels;
   onSpeakingChange?: (speaking: boolean) => void;
-}>(({ onSpeakingChange }, ref) => {
+}>(({ labels = defaultLabels, onSpeakingChange }, ref) => {
   const [muted, setMuted] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const contextRef = useRef<AudioContext | null>(null);
@@ -126,12 +143,12 @@ const TTSPlayer = forwardRef<TTSPlayerHandle, {
     <button
       type="button"
       aria-pressed={muted}
-      aria-label={muted ? "开启面试官语音" : "静音面试官语音"}
+      aria-label={muted ? labels.unmute : labels.mute}
       onClick={toggleMuted}
       className="mira-button inline-flex h-9 items-center gap-1.5 rounded-full border border-[#e5e5e5] bg-white px-3 text-xs text-[#525252]"
     >
       {muted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
-      {muted ? "已静音" : speaking ? "播放中" : "语音开启"}
+      {muted ? labels.muted : speaking ? labels.speaking : labels.idle}
     </button>
   );
 });

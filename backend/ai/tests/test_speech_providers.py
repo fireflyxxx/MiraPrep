@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 import json
 
@@ -83,6 +84,30 @@ async def test_deepgram_asr_stream_sends_pcm_and_maps_partial_and_final_results(
         AsrResult(text="我负责了", is_final=False),
         AsrResult(text="我负责了核心模块", is_final=True),
     ]
+    await stream.aclose()
+
+
+@pytest.mark.asyncio
+async def test_deepgram_asr_stream_keeps_an_idle_connection_alive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    socket = FakeDeepgramSocket()
+    monkeypatch.setattr(
+        "app.services.asr.deepgram._KEEPALIVE_INTERVAL_SECONDS",
+        0.01,
+        raising=False,
+    )
+
+    async def connect(_url: str, *, additional_headers: dict[str, str]):
+        return socket
+
+    monkeypatch.setattr("app.services.asr.deepgram.connect", connect)
+    stream = await DeepgramAsrProvider(api_key="dg-test-key").open_stream("pcm16/16k")
+
+    await asyncio.sleep(0.035)
+    await stream.aclose()
+
+    assert '{"type":"KeepAlive"}' in socket.sent
 
 
 @pytest.mark.asyncio

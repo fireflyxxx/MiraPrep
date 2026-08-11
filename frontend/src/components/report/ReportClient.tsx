@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import Link from "next/link";
 import Logo from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
-  useExportReport,
   useReport,
   type FollowUpReview,
   type InterviewReport,
@@ -13,7 +13,13 @@ import {
 } from "@/lib/api/report";
 import { useOverviewStats, type DimensionScores, type Grade } from "@/lib/api/stats";
 import { difficultyLabel, phaseLabel } from "@/lib/interview-options";
+import { storeInterviewRuntimeToken } from "@/lib/api/interview-stream";
+import {
+  useCreatePractice,
+  type CreatePracticeResponse,
+} from "@/lib/api/practice";
 import HistoryTrend from "./HistoryTrend";
+import PracticeDialog from "./PracticeDialog";
 import RadarChart from "./RadarChart";
 import ShareDialog from "./ShareDialog";
 
@@ -103,6 +109,37 @@ function ReportGenerating() {
 export default function ReportClient({ sessionId }: { sessionId: string }) {
   const { data, status, isPending, isError, refetch } = useReport(sessionId);
   const { data: overview } = useOverviewStats();
+  const { mutate: createPractice } = useCreatePractice();
+  const launchSequence = useRef(0);
+  const [practiceLaunch, setPracticeLaunch] = useState<{
+    attempt: number;
+    question: ReportQuestion;
+    created: CreatePracticeResponse | null;
+    error: string | null;
+  } | null>(null);
+
+  const launchPractice = (question: ReportQuestion) => {
+    const attempt = ++launchSequence.current;
+    setPracticeLaunch({ attempt, question, created: null, error: null });
+    createPractice(
+      { sourceSessionId: sessionId, questionId: question.questionId },
+      {
+        onSuccess: (created) => {
+          storeInterviewRuntimeToken(created.practiceSessionId, created.runtimeToken);
+          setPracticeLaunch((current) =>
+            current?.attempt === attempt ? { ...current, created } : current,
+          );
+        },
+        onError: (error) => {
+          const message =
+            error instanceof Error ? error.message : "创建练习失败，请稍后重试。";
+          setPracticeLaunch((current) =>
+            current?.attempt === attempt ? { ...current, error: message } : current,
+          );
+        },
+      },
+    );
+  };
 
   if (isPending) {
     return (
@@ -141,7 +178,10 @@ export default function ReportClient({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <div data-session={sessionId} className="min-h-screen bg-surface-subtle">
+    <div
+      data-session={sessionId}
+      className="min-h-screen bg-surface-subtle print:min-h-0 [print-color-adjust:exact] [-webkit-print-color-adjust:exact]"
+    >
       <ReportHeader sessionId={sessionId} />
       <ReportBody
         report={data}
@@ -153,7 +193,21 @@ export default function ReportClient({ sessionId }: { sessionId: string }) {
             currentSessionId={data.sessionId}
           />
         }
+        onRetryQuestion={launchPractice}
       />
+      {practiceLaunch ? (
+        <PracticeDialog
+          key={practiceLaunch.attempt}
+          open
+          onOpenChange={(open) => {
+            if (!open) setPracticeLaunch(null);
+          }}
+          question={practiceLaunch.question}
+          created={practiceLaunch.created}
+          createError={practiceLaunch.error}
+          onRetry={() => launchPractice(practiceLaunch.question)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -166,17 +220,38 @@ export function ReportBody({
   report,
   historyScores,
   trend,
+  onRetryQuestion,
 }: {
   report: InterviewReport;
   historyScores?: DimensionScores | null;
   trend?: ReactNode;
+  onRetryQuestion?: (question: ReportQuestion) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const visible = expanded ? report.questions : report.questions.slice(0, 3);
-  const hiddenCount = report.questions.length - visible.length;
+  const [printing, setPrinting] = useState(false);
+
+  useEffect(() => {
+    const expandForPrint = () => {
+      flushSync(() => setPrinting(true));
+    };
+    const restoreAfterPrint = () => {
+      flushSync(() => setPrinting(false));
+    };
+    window.addEventListener("beforeprint", expandForPrint);
+    window.addEventListener("afterprint", restoreAfterPrint);
+    return () => {
+      window.removeEventListener("beforeprint", expandForPrint);
+      window.removeEventListener("afterprint", restoreAfterPrint);
+    };
+  }, []);
+
+  const visibleQuestions =
+    expanded || printing ? report.questions : report.questions.slice(0, 3);
+  const hiddenCount =
+    expanded || printing ? 0 : Math.max(0, report.questions.length - 3);
 
   return (
-    <main className="animate-mira-page-in mx-auto max-w-[920px] px-6 pt-10 pb-20 md:px-8">
+    <main className="report-print-root animate-mira-page-in mx-auto max-w-[920px] px-6 pt-10 pb-20 md:px-8 print:animate-none print:px-0 print:pt-0 print:pb-0">
       <div className="mb-2 flex flex-wrap items-center gap-2 font-display text-[13px] text-muted-foreground">
         <span>INTERVIEW REPORT · {formatDate(report.createdAt)}</span>
         {report.partial ? (
@@ -254,16 +329,22 @@ export function ReportBody({
           本次没有可复盘的题目
         </div>
       ) : (
-        <div className="flex flex-col gap-3.5">
-          {visible.map((question) => (
-            <QuestionReview key={question.questionId} question={question} />
+        <div className="report-question-list flex flex-col gap-3.5">
+          {visibleQuestions.map((question) => (
+            <div
+              key={question.questionId}
+              data-report-question={question.questionId}
+              className="report-question-print-block"
+            >
+              <QuestionReview question={question} onRetry={onRetryQuestion} />
+            </div>
           ))}
 
           {hiddenCount > 0 ? (
             <button
               type="button"
               onClick={() => setExpanded(true)}
-              className="mira-button cursor-pointer p-2 text-center text-[13.5px] text-primary"
+              className="mira-button cursor-pointer p-2 text-center text-[13.5px] text-primary print:hidden"
               aria-label={`展开其余 ${hiddenCount} 题`}
             >
               展开其余 {hiddenCount} 题 ↓
@@ -273,7 +354,7 @@ export function ReportBody({
             <button
               type="button"
               onClick={() => setExpanded(false)}
-              className="mira-button cursor-pointer p-2 text-center text-[13.5px] text-muted-foreground"
+              className="mira-button cursor-pointer p-2 text-center text-[13.5px] text-muted-foreground print:hidden"
             >
               收起 ↑
             </button>
@@ -286,7 +367,7 @@ export function ReportBody({
 
 function ReportHeader({ sessionId }: { sessionId?: string }) {
   return (
-    <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border-subtle bg-surface/92 px-4 py-4 backdrop-blur-[12px] sm:px-6 md:px-7">
+    <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border-subtle bg-surface/92 px-4 py-4 backdrop-blur-[12px] sm:px-6 md:px-7 print:hidden">
       <div className="flex items-center gap-3 sm:gap-4">
         <Logo />
         <Link
@@ -315,16 +396,21 @@ function ReportHeader({ sessionId }: { sessionId?: string }) {
 
 /** 导出只在报告已经就绪时出现：报告还没生成时后端也只会返回 404。 */
 function ExportButton({ sessionId }: { sessionId: string }) {
-  const exportReport = useExportReport(sessionId);
+  const printReport = () => {
+    const previousTitle = document.title;
+    document.title = `MiraPrep-report-${sessionId}`;
+    window.dispatchEvent(new Event("beforeprint"));
+    window.print();
+    document.title = previousTitle;
+  };
+
   return (
     <button
       type="button"
-      onClick={() => exportReport.mutate()}
-      disabled={exportReport.isPending}
-      aria-busy={exportReport.isPending}
-      className="mira-button hidden rounded-[9px] border border-border bg-surface px-4 py-2 text-[13px] text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:block"
+      onClick={printReport}
+      className="mira-button hidden rounded-[9px] border border-border bg-surface px-4 py-2 text-[13px] text-muted-foreground sm:block"
     >
-      {exportReport.isPending ? "导出中…" : "导出 PDF"}
+      导出 PDF
     </button>
   );
 }
@@ -358,7 +444,13 @@ function SummaryList({
   );
 }
 
-function QuestionReview({ question }: { question: ReportQuestion }) {
+function QuestionReview({
+  question,
+  onRetry,
+}: {
+  question: ReportQuestion;
+  onRetry?: (question: ReportQuestion) => void;
+}) {
   const score = question.score;
   const qualitative =
     score === null ? "未评分" : score >= 8 ? "优秀" : score >= 6 ? "良好" : "待提升";
@@ -385,7 +477,7 @@ function QuestionReview({ question }: { question: ReportQuestion }) {
     .filter((item): item is FollowUpReview => item !== null);
 
   return (
-    <article className="mira-surface animate-mira-soft-pop overflow-hidden rounded-[18px] border border-border-subtle bg-surface">
+    <article className="mira-surface animate-mira-soft-pop overflow-hidden rounded-[18px] border border-border-subtle bg-surface print:animate-none">
       <div className="flex items-start gap-3.5 border-b border-muted px-5 py-[18px] sm:items-center sm:px-[22px]">
         <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg bg-foreground font-display text-[13px] text-background">
           Q{question.order}
@@ -445,7 +537,7 @@ function QuestionReview({ question }: { question: ReportQuestion }) {
             {question.answer || "本题没有记录到回答"}
           </p>
           {question.audioUrl ? (
-            <audio className="mt-3 w-full" controls src={question.audioUrl}>
+            <audio className="mt-3 w-full print:hidden" controls src={question.audioUrl}>
               浏览器不支持音频播放。
             </audio>
           ) : null}
@@ -494,8 +586,23 @@ function QuestionReview({ question }: { question: ReportQuestion }) {
       ) : null}
 
       <div className="border-t border-muted bg-surface-subtle px-5 py-3.5 text-[13px] leading-relaxed sm:px-[22px]">
-        <strong>建议：</strong>
-        {question.suggestions.length ? question.suggestions.join("；") : "继续保持当前答题节奏。"}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            <strong>建议：</strong>
+            {question.suggestions.length
+              ? question.suggestions.join("；")
+              : "继续保持当前答题节奏。"}
+          </p>
+          {onRetry ? (
+            <button
+              type="button"
+              onClick={() => onRetry(question)}
+              className="mira-button shrink-0 rounded-[9px] border border-primary/25 bg-surface px-3.5 py-2 text-[12.5px] font-medium text-primary print:hidden"
+            >
+              重练此题
+            </button>
+          ) : null}
+        </div>
       </div>
     </article>
   );

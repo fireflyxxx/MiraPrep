@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
+from contextlib import suppress
 import json
+from time import monotonic
 from typing import Any
 from urllib.parse import urlencode
 
 from websockets.asyncio.client import connect
 
 from app.services.asr.base import AsrResult, AsrStream
+
+_KEEPALIVE_INTERVAL_SECONDS = 4.0
 
 
 class DeepgramAsrProvider:
@@ -52,12 +57,32 @@ class DeepgramAsrStream:
     def __init__(self, websocket: Any) -> None:
         self._websocket = websocket
         self._committed = ""
+        self._send_lock = asyncio.Lock()
+        self._last_send_at = monotonic()
+        self._keepalive_task = asyncio.create_task(self._keep_idle_connection_alive())
 
     async def send_audio(self, chunk: bytes) -> None:
-        await self._websocket.send(chunk)
+        await self._send(chunk)
 
     async def finalize(self) -> None:
-        await self._websocket.send('{"type":"Finalize"}')
+        await self._send('{"type":"Finalize"}')
+
+    async def _send(self, message: bytes | str) -> None:
+        async with self._send_lock:
+            await self._websocket.send(message)
+            self._last_send_at = monotonic()
+
+    async def _keep_idle_connection_alive(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(_KEEPALIVE_INTERVAL_SECONDS)
+                if monotonic() - self._last_send_at >= _KEEPALIVE_INTERVAL_SECONDS:
+                    await self._send('{"type":"KeepAlive"}')
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # results() 会把连接关闭交给上层重连；保活任务自身不能泄漏未取回异常。
+            return
 
     async def results(self) -> AsyncIterator[AsrResult]:
         async for raw in self._websocket:
@@ -81,6 +106,9 @@ class DeepgramAsrStream:
             )
 
     async def aclose(self) -> None:
+        self._keepalive_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await self._keepalive_task
         await self._websocket.close()
 
 

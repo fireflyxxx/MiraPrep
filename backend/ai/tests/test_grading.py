@@ -32,6 +32,11 @@ from app.services.grading import (
 )
 
 
+def test_grading_does_not_penalize_missing_literal_code_in_a_spoken_interview() -> None:
+    assert "不得因候选人没有现场提供完整、可运行的代码而扣分" in GRADING_SYSTEM_PROMPT
+    assert "不得把未展示完整代码写成提升方向" in SUMMARY_SYSTEM_PROMPT
+
+
 def _request_data(*, partial: bool = False, session_id: int = 105) -> dict[str, Any]:
     return {
         "sessionId": session_id,
@@ -103,6 +108,13 @@ def _question_review(question_id: int, score: int) -> QuestionReview:
             else []
         ),
     )
+
+
+def test_grading_prompts_do_not_treat_asr_artifacts_as_speaking_defects() -> None:
+    for prompt in (GRADING_SYSTEM_PROMPT, SUMMARY_SYSTEM_PROMPT):
+        assert "ASR" in prompt
+        assert "不得据此判断候选人存在口误、吞字、语速或发音问题" in prompt
+        assert "不得因此扣分" in prompt
 
 
 class RecordingLlm:

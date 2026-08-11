@@ -1,6 +1,7 @@
 package com.miraprep.stats;
 
 import com.miraprep.domain.InterviewSession;
+import com.miraprep.domain.InterviewSessionType;
 import com.miraprep.domain.InterviewStatus;
 import com.miraprep.domain.Report;
 import com.miraprep.interview.InterviewSessionRepository;
@@ -47,8 +48,10 @@ public class StatsService {
     @Transactional(readOnly = true)
     public StatsOverviewResponse overview(Long userId) {
         List<InterviewSession> endedSessions =
-                sessionRepository.findByUserIdAndDeletedFalseAndStatusIn(
-                        userId, List.of(InterviewStatus.COMPLETED, InterviewStatus.ABORTED));
+                sessionRepository.findByUserIdAndDeletedFalseAndSessionTypeAndStatusIn(
+                        userId,
+                        InterviewSessionType.INTERVIEW,
+                        List.of(InterviewStatus.COMPLETED, InterviewStatus.ABORTED));
         long practiceSeconds = endedSessions.stream()
                 .filter(session -> session.getStartedAt() != null && session.getEndedAt() != null)
                 .mapToLong(session ->

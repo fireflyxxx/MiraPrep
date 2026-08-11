@@ -48,6 +48,11 @@ class InterviewStatus(StrEnum):
     ENDED = "ENDED"
 
 
+class RuntimeMode(StrEnum):
+    INTERVIEW = "interview"
+    PRACTICE = "practice"
+
+
 class ConversationRole(StrEnum):
     INTERVIEWER = "interviewer"
     CANDIDATE = "candidate"
@@ -70,6 +75,7 @@ class PendingAudioFrame(BaseModel):
 
 class InterviewSessionState(BaseModel):
     sessionId: int = Field(gt=0)
+    mode: RuntimeMode = RuntimeMode.INTERVIEW
     durationMin: Literal[15, 30, 45]
     interviewerStyle: str = Field(min_length=1)
     accessTokenHash: str = Field(min_length=64, max_length=64)
@@ -144,6 +150,7 @@ class InterviewStartRequest(BaseModel):
     `config`/`resume` 是后续出题所需的上下文，必须随启动一起交接。
     """
 
+    mode: RuntimeMode = RuntimeMode.INTERVIEW
     durationMin: Literal[15, 30, 45]
     interviewerStyle: str = Field(min_length=1)
     accessToken: str = Field(min_length=32, max_length=256)
@@ -160,6 +167,11 @@ class InterviewStartRequest(BaseModel):
         orders = sorted(question.order for question in self.questions)
         if orders != list(range(1, len(self.questions) + 1)):
             raise ValueError("question order must be contiguous")
+
+        if self.mode is RuntimeMode.PRACTICE:
+            if len(self.questions) != 1:
+                raise ValueError("practice runtime must contain exactly one question")
+            return self
 
         ordered_questions = sorted(self.questions, key=lambda question: question.order)
         phase_order = {phase: index for index, phase in enumerate(InterviewPhase)}

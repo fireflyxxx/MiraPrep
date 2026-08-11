@@ -17,6 +17,8 @@ def next_phase(
     budget: dict[InterviewPhase, int],
     asked: Counter[InterviewPhase] | dict[InterviewPhase, int],
     current: InterviewPhase | None,
+    *,
+    skip_current: bool = False,
 ) -> InterviewPhase | None:
     """
     返回下一题应属的阶段，全部预算用完返回 None（面试可以收尾）。
@@ -25,7 +27,7 @@ def next_phase(
     """
 
     phases = list(InterviewPhase)
-    start = phases.index(current) if current is not None else 0
+    start = phases.index(current) + int(skip_current) if current is not None else 0
     for phase in phases[start:]:
         if asked.get(phase, 0) < budget.get(phase, 0):
             return phase

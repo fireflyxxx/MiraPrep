@@ -84,7 +84,7 @@ describe("AuthPage", () => {
     await user.type(screen.getByLabelText("昵称"), "New");
     await user.type(screen.getByLabelText("邮箱"), "new@example.com");
     await user.type(screen.getByLabelText("验证码"), "123456");
-    await user.type(screen.getByLabelText("密码"), "strongpass123");
+    await user.type(screen.getByLabelText("密码"), "pass1234");
     await user.click(screen.getByRole("button", { name: "创建账号" }));
 
     await waitFor(() =>
@@ -120,7 +120,24 @@ describe("AuthPage", () => {
     await user.click(screen.getByRole("button", { name: "创建账号" }));
 
     expect(
-      (await screen.findAllByText("密码至少 12 位，且必须同时包含字母和数字")).length,
+      (await screen.findAllByText("密码至少 8 位，且必须同时包含字母和数字")).length,
+    ).toBeGreaterThan(0);
+    expect(register).not.toHaveBeenCalled();
+  });
+
+  it("rejects a seven-character registration password before calling the API", async () => {
+    const user = userEvent.setup();
+    render(<QueryClientProvider client={createQueryClient()}><AuthPage /></QueryClientProvider>);
+
+    await user.click(screen.getByRole("button", { name: "注册" }));
+    await user.type(screen.getByLabelText("昵称"), "Mira");
+    await user.type(screen.getByLabelText("邮箱"), "mira@example.com");
+    await user.type(screen.getByLabelText("验证码"), "123456");
+    await user.type(screen.getByLabelText("密码"), "abc1234");
+    await user.click(screen.getByRole("button", { name: "创建账号" }));
+
+    expect(
+      (await screen.findAllByText("密码至少 8 位，且必须同时包含字母和数字")).length,
     ).toBeGreaterThan(0);
     expect(register).not.toHaveBeenCalled();
   });

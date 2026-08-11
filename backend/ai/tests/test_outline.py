@@ -241,6 +241,11 @@ def test_prompt_contains_exact_budget_style_and_soft_requirements() -> None:
     assert '"customRequirements": "重点系统设计，少问算法"' in user_prompt
 
 
+def test_outline_questions_must_be_answerable_in_a_spoken_interview() -> None:
+    assert "不得要求候选人现场编写、粘贴或展示完整代码" in SYSTEM_PROMPT
+    assert "口头说明伪代码、关键接口、数据流或实现思路" in SYSTEM_PROMPT
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("duration_min", [15, 30, 45])
 async def test_service_success_generates_duration_aware_ready_callback(

@@ -73,18 +73,16 @@ describe("InterviewSetupPage", () => {
     vi.mocked(pollInterviewUntilSettled).mockReset();
   });
 
-  it("keeps the voice switch thumb inside its track", async () => {
+  it("does not show a redundant voice-mode preset on the requirements step", async () => {
     const user = userEvent.setup();
     render(<InterviewSetupPage />);
 
     await reachFinalStep(user);
-    const toggle = screen.getByRole("switch");
-    const thumb = toggle.querySelector("span");
 
-    expect(thumb).toHaveClass("left-1", "translate-x-0");
-    await user.click(toggle);
-    expect(thumb).toHaveClass("left-1", "translate-x-5");
-    expect(thumb).not.toHaveClass("translate-x-6");
+    expect(screen.queryByText("语音面试")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("switch", { name: "启用语音面试" }),
+    ).not.toBeInTheDocument();
   });
 
   it("submits every T-032 field and enters the real session after the outline is ready", async () => {
@@ -108,7 +106,6 @@ describe("InterviewSetupPage", () => {
     await user.click(screen.getByRole("button", { name: "HR 面试" }));
     await user.click(screen.getByRole("button", { name: "下一步 →" }));
     await user.click(screen.getByRole("button", { name: "温和引导" }));
-    await user.click(screen.getByRole("switch", { name: "启用语音面试" }));
     await user.type(screen.getByLabelText("给面试官的备注"), "多问系统设计");
     await user.click(screen.getByRole("button", { name: "开始面试 →" }));
 
@@ -123,7 +120,7 @@ describe("InterviewSetupPage", () => {
         durationMin: 30,
         customRequirements: expect.stringContaining("多问系统设计"),
         interviewerStyle: "friendly",
-        voiceEnabled: true,
+        voiceEnabled: false,
       }),
     );
     expect(await screen.findByText("面试官正在阅读你的简历…")).toBeInTheDocument();
@@ -135,6 +132,9 @@ describe("InterviewSetupPage", () => {
     expect(
       window.sessionStorage.getItem("miraprep.interview-runtime-token.42"),
     ).toBe("session-runtime-token");
+    expect(
+      window.sessionStorage.getItem("miraprep.interview-voice-preference.42"),
+    ).toBeNull();
   });
 
   it("shows a retry and return choice when outline generation fails", async () => {

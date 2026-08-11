@@ -52,7 +52,7 @@ class AuthEdgeCaseTest {
         seedCode("a-" + uniqueEmail(), "register", "111111");
         mockMvc.perform(post("/api/v1/auth/register")
                         .contentType("application/json")
-                        .content("{\"email\":\"boundary@example.com\",\"password\":\"short12\",\"code\":\"111111\"}"))
+                        .content("{\"email\":\"boundary@example.com\",\"password\":\"abc1234\",\"code\":\"111111\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(40000));
     }

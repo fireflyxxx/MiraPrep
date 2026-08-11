@@ -36,12 +36,14 @@ const loginSchema = z.object({
   password: z.string().min(8, "密码至少需要 8 位").max(128, "密码不能超过 128 位"),
 });
 
+const registerPasswordMessage = "密码至少 8 位，且必须同时包含字母和数字";
+
 const registerSchema = loginSchema.extend({
   password: z
     .string()
-    .min(12, "密码至少 12 位，且必须同时包含字母和数字")
+    .min(8, registerPasswordMessage)
     .max(128, "密码不能超过 128 位")
-    .regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, "密码至少 12 位，且必须同时包含字母和数字"),
+    .regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, registerPasswordMessage),
   nickname: z.string().trim().min(1, "请输入昵称").max(100, "昵称不能超过 100 个字符"),
   code: z.string().length(6, "请输入 6 位验证码"),
 });
@@ -66,8 +68,8 @@ function messageFor(error: Error): string {
 
 function passwordStrength(password: string): string {
   if (!password) return "";
-  if (password.length < 12 || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
-    return "密码至少 12 位，且必须同时包含字母和数字";
+  if (password.length < 8 || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+    return registerPasswordMessage;
   }
   if (/[A-Z]/.test(password) && /[0-9]/.test(password) && /[^A-Za-z0-9]/.test(password)) {
     return "密码强度：强";

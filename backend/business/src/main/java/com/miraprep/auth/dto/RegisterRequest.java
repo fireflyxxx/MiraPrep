@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Size;
 public record RegisterRequest(
         @NotBlank @Email String email,
         @NotBlank
-                @Size(min = 12, max = 128)
+                @Size(min = 8, max = 128)
                 @Pattern(
                         regexp = "^(?=.*[A-Za-z])(?=.*\\d).+$",
                         message = "password must contain both letters and numbers")

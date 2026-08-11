@@ -110,6 +110,7 @@ public class AiServiceClient {
      */
     public record InterviewStartRequest(
             Long sessionId,
+            String mode,
             String accessToken,
             int durationMin,
             String interviewerStyle,

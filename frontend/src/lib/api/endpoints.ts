@@ -27,6 +27,10 @@ export const endpoints = {
   myProfile: "/users/me/profile",
   resumes: "/resumes",
   interviews: "/interviews",
+  practiceRetry: (sessionId: string, questionId: number) =>
+    `/interviews/${sessionId}/questions/${questionId}/retry`,
+  practiceResult: (practiceSessionId: string) =>
+    `/interviews/${practiceSessionId}/practice-result`,
   overviewStats: "/stats/overview",
   report: (sessionId: string) => `/reports/${sessionId}`,
   reportStatus: (sessionId: string) => `/reports/${sessionId}/status`,

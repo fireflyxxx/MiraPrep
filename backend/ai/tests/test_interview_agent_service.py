@@ -64,6 +64,34 @@ def _start_request() -> InterviewStartRequest:
     )
 
 
+def _practice_start_request() -> InterviewStartRequest:
+    return InterviewStartRequest.model_validate(
+        {
+            "mode": "practice",
+            "durationMin": 15,
+            "interviewerStyle": "professional",
+            "accessToken": "test-practice-token-121-at-least-32-chars",
+            "config": {
+                "jobDirection": "backend",
+                "difficulty": "medium",
+                "types": ["technical"],
+                "durationMin": 15,
+                "interviewerStyle": "professional",
+            },
+            "resume": {"parsedJson": {"skills": ["Spring"]}},
+            "questions": [
+                {
+                    "questionId": 121,
+                    "phase": "DOMAIN_ASSESSMENT",
+                    "text": "如何定位一次线上性能问题？",
+                    "focusPoints": ["分析路径", "解决效果"],
+                    "order": 1,
+                }
+            ],
+        }
+    )
+
+
 class ScriptedLlm:
     def __init__(
         self, decisions: list[str] | None = None, replies: list[str] | None = None
@@ -267,6 +295,38 @@ async def test_start_opens_interview_and_asks_first_outline_question() -> None:
     assert "请简要介绍自己" in events[2].payload["text"]
     assert [message["role"] for message in sink.messages] == ["interviewer", "interviewer"]
     assert [message["seq"] for message in sink.messages] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_practice_finishes_after_one_answer_without_decision_or_follow_up() -> None:
+    service, store, llm, _, grader, _ = _service()
+    await service.start(121, _practice_start_request())
+
+    await service.answer(
+        121,
+        InterviewAnswerRequest(
+            answerId="practice-answer-121",
+            content="我先确认指标异常，再结合日志和压测定位瓶颈，最后验证修复收益。",
+            questionId=121,
+        ),
+    )
+
+    state = await store.get(121)
+    candidate_messages = [message for message in state.history if message.role == "candidate"]
+    assert state.status == "ENDED"
+    assert len(candidate_messages) == 1
+    assert llm.complete_calls == []
+    assert grader.calls[0]["reason"] == "practice_completed"
+
+    await service.answer(
+        121,
+        InterviewAnswerRequest(
+            answerId="practice-answer-121",
+            content="重复提交",
+            questionId=121,
+        ),
+    )
+    assert len(grader.calls) == 1
 
 
 @pytest.mark.asyncio

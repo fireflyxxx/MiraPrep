@@ -43,6 +43,7 @@ from app.schemas.interview import (
     InterviewSessionState,
     InterviewStartRequest,
     InterviewStatus,
+    RuntimeMode,
     RuntimeInterviewPhase,
     RuntimeQuestion,
 )
@@ -205,6 +206,7 @@ class InterviewAgentService:
             now = self._clock()
             state = InterviewSessionState(
                 sessionId=session_id,
+                mode=body.mode,
                 durationMin=body.durationMin,
                 interviewerStyle=body.interviewerStyle,
                 accessTokenHash=self._hash_access_token(body.accessToken),
@@ -227,7 +229,11 @@ class InterviewAgentService:
             if not state.history:
                 await self._emit_interviewer_message(
                     state,
-                    "你好，我是本次模拟面试官。接下来我会按阶段提问，请结合真实经历作答。",
+                    (
+                        "我们只重练这一道题。请重新组织一次回答，提交后会直接生成对比反馈。"
+                        if state.mode is RuntimeMode.PRACTICE
+                        else "你好，我是本次模拟面试官。接下来我会按阶段提问，请结合真实经历作答。"
+                    ),
                     question=None,
                 )
             first_index = self._first_interview_question_index(state.questions)
@@ -259,6 +265,10 @@ class InterviewAgentService:
             )
 
             if await self._enforce_deadline_locked(state):
+                return
+
+            if state.mode is RuntimeMode.PRACTICE:
+                await self._finish(state, "practice_completed")
                 return
 
             if state.phase is RuntimeInterviewPhase.CANDIDATE_QA:
@@ -306,6 +316,9 @@ class InterviewAgentService:
                 return
             if state.pendingFinishReason is not None:
                 await self._finish(state, state.pendingFinishReason)
+                return
+            if state.mode is RuntimeMode.PRACTICE:
+                await self._finish(state, reason)
                 return
             closing_index = await self._ensure_phase_question(state, InterviewPhase.CLOSING)
             if closing_index is None:
@@ -705,7 +718,12 @@ class InterviewAgentService:
         current = None
         if state.phase.value != RuntimeInterviewPhase.GREETING.value:
             current = InterviewPhase(state.phase.value)
-        return next_phase(budget, asked, current)
+        return next_phase(
+            budget,
+            asked,
+            current,
+            skip_current=state.followUpCount >= 3,
+        )
 
     async def _ensure_phase_question(
         self, state: InterviewSessionState, phase: InterviewPhase
@@ -737,10 +755,16 @@ class InterviewAgentService:
             resume=state.resume.parsedJson,
             asked_questions=[question.text for question in state.questions],
             history=[
-                {"role": message.role.value, "content": message.content}
+                {
+                    "role": message.role.value,
+                    "content": message.content,
+                    "questionId": message.questionId,
+                    "phase": message.phase.value,
+                }
                 for message in state.history[-8:]
             ],
             remaining_seconds=remaining,
+            previous_follow_up_count=state.followUpCount,
         )
         try:
             generated = await build_next_question_chain(self._llm).ainvoke(
@@ -878,6 +902,9 @@ class InterviewAgentService:
         if state.status is InterviewStatus.ENDED:
             return False
         now = self._clock()
+        if state.mode is RuntimeMode.PRACTICE and now >= state.deadlineAt:
+            await self._finish(state, "timeout")
+            return True
         if (
             state.phase not in {RuntimeInterviewPhase.CANDIDATE_QA, RuntimeInterviewPhase.CLOSING}
             and now >= state.deadlineAt

@@ -1,5 +1,5 @@
 from app.prompts.grading import build_question_prompt
-from app.prompts.interviewer import build_decision_prompt
+from app.prompts.interviewer import INTERVIEWER_SYSTEM_PROMPT, build_decision_prompt
 from app.prompts.outline import build_user_prompt as build_outline_prompt
 from app.prompts.resume_parse import build_user_prompt as build_resume_prompt
 from app.schemas.grading import (
@@ -62,6 +62,11 @@ def test_interviewer_prompt_keeps_candidate_answer_inside_one_untrusted_boundary
     assert prompt.count("<<<UNTRUSTED_CANDIDATE_ANSWER_END>>>") == 1
     assert "\u0000" not in prompt
     assert len(prompt) <= 65_000
+
+
+def test_interviewer_follow_up_must_not_demand_literal_code() -> None:
+    assert "不得要求候选人现场编写、粘贴或展示完整代码" in INTERVIEWER_SYSTEM_PROMPT
+    assert "口头说明伪代码、关键接口、数据流或实现思路" in INTERVIEWER_SYSTEM_PROMPT
 
 
 def test_grading_prompt_neutralizes_answer_injection() -> None:

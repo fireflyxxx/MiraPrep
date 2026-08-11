@@ -4,6 +4,7 @@ import com.miraprep.common.error.ErrorCode;
 import com.miraprep.common.exception.BusinessException;
 import com.miraprep.domain.GradingStatus;
 import com.miraprep.domain.InterviewMessage;
+import com.miraprep.domain.InterviewPhase;
 import com.miraprep.domain.InterviewSession;
 import com.miraprep.domain.InterviewStatus;
 import com.miraprep.domain.MessageRole;
@@ -161,6 +162,7 @@ public class ReportService {
         }
         List<ReportResponse.Question> questions =
                 questionRepository.findBySessionIdOrderBySortOrder(sessionId).stream()
+                        .filter(question -> question.getPhase() != InterviewPhase.CLOSING)
                         .map(question -> questionResponse(
                                 question,
                                 reviewsByQuestion.get(question.getId()),

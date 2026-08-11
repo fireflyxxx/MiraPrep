@@ -180,7 +180,8 @@ export function streamVoiceInterview(options: VoiceSocketOptions): Promise<void>
       websocketUrl(options.sessionId, options.runtimeToken, options.afterSeq),
     );
     let opened = false;
-    let audioSeq = readAudioCursor(options.sessionId);
+    let acknowledgedAudioSeq = readAudioCursor(options.sessionId);
+    let audioSeq = acknowledgedAudioSeq;
 
     const send = (type: string, payload: Record<string, unknown>): boolean => {
       if (websocket.readyState !== WebSocket.OPEN) return false;
@@ -198,7 +199,6 @@ export function streamVoiceInterview(options: VoiceSocketOptions): Promise<void>
         });
         if (sent) {
           audioSeq = nextSeq;
-          storeAudioCursor(options.sessionId, audioSeq);
         }
         return sent;
       },
@@ -220,16 +220,24 @@ export function streamVoiceInterview(options: VoiceSocketOptions): Promise<void>
         const event: unknown = JSON.parse(String(message.data));
         if (!isVoiceEvent(event)) return;
         if (event.type === "asr_partial" && event.payload.acceptedAudioSeq) {
-          audioSeq = Math.max(audioSeq, event.payload.acceptedAudioSeq);
-          storeAudioCursor(options.sessionId, audioSeq);
+          acknowledgedAudioSeq = Math.max(
+            acknowledgedAudioSeq,
+            event.payload.acceptedAudioSeq,
+          );
+          audioSeq = Math.max(audioSeq, acknowledgedAudioSeq);
+          storeAudioCursor(options.sessionId, acknowledgedAudioSeq);
         }
         if (
           event.type === "error" &&
           "expectedAudioSeq" in event.payload &&
           typeof event.payload.expectedAudioSeq === "number"
         ) {
-          audioSeq = Math.max(0, event.payload.expectedAudioSeq - 1);
-          storeAudioCursor(options.sessionId, audioSeq);
+          acknowledgedAudioSeq = Math.max(
+            0,
+            event.payload.expectedAudioSeq - 1,
+          );
+          audioSeq = acknowledgedAudioSeq;
+          storeAudioCursor(options.sessionId, acknowledgedAudioSeq);
         }
         options.onEvent(event);
       } catch {

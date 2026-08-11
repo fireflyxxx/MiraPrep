@@ -10,6 +10,7 @@ import com.miraprep.domain.InterviewDifficulty;
 import com.miraprep.domain.InterviewMessage;
 import com.miraprep.domain.InterviewPhase;
 import com.miraprep.domain.InterviewSession;
+import com.miraprep.domain.InterviewSessionType;
 import com.miraprep.domain.InterviewStatus;
 import com.miraprep.domain.InterviewerStyle;
 import com.miraprep.domain.MessageRole;
@@ -137,11 +138,7 @@ public class InterviewService {
         eventPublisher.publishEvent(new InterviewOutlineRequestedEvent(outlineRequest));
 
         // 令牌在创建时就铸好交给前端，大纲就绪后才交接给运行时，两边必须是同一个值。
-        String runtimeToken = newRuntimeToken();
-        runtimeTokenStore.put(
-                runtimeTokenKey(saved.getId()),
-                runtimeToken,
-                Duration.ofMinutes(saved.getDurationMin()).plus(RUNTIME_TOKEN_SLACK));
+        String runtimeToken = issueRuntimeToken(saved);
         return new CreateInterviewResponse(
                 saved.getId(), lower(saved.getOutlineStatus()), runtimeToken);
     }
@@ -154,6 +151,16 @@ public class InterviewService {
         byte[] material = new byte[32];
         RUNTIME_TOKEN_RANDOM.nextBytes(material);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(material);
+    }
+
+    /** 为同一业务边界内的正式面试或单题练习铸造运行时令牌。 */
+    String issueRuntimeToken(InterviewSession session) {
+        String runtimeToken = newRuntimeToken();
+        runtimeTokenStore.put(
+                runtimeTokenKey(session.getId()),
+                runtimeToken,
+                Duration.ofMinutes(session.getDurationMin()).plus(RUNTIME_TOKEN_SLACK));
+        return runtimeToken;
     }
 
     @Transactional(readOnly = true)
@@ -206,7 +213,7 @@ public class InterviewService {
 
         InterviewStatus runtimeStatus = switch (request.reason().trim().toLowerCase(Locale.ROOT)) {
             case "manual", "inappropriate_content" -> InterviewStatus.ABORTED;
-            case "timeout", "completed" -> InterviewStatus.COMPLETED;
+            case "timeout", "completed", "practice_completed" -> InterviewStatus.COMPLETED;
             default -> throw new BusinessException(ErrorCode.INVALID_PARAM);
         };
         if (session.getStatus() != InterviewStatus.ABORTED) {
@@ -224,10 +231,14 @@ public class InterviewService {
                 page - 1, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         Page<InterviewSession> sessions;
         if (status == null || status.isBlank()) {
-            sessions = interviewSessionRepository.findByUserIdAndDeletedFalse(userId, pageable);
+            sessions = interviewSessionRepository.findByUserIdAndDeletedFalseAndSessionType(
+                    userId, InterviewSessionType.INTERVIEW, pageable);
         } else {
-            sessions = interviewSessionRepository.findByUserIdAndDeletedFalseAndStatus(
-                    userId, enumValue(com.miraprep.domain.InterviewStatus.class, status), pageable);
+            sessions = interviewSessionRepository.findByUserIdAndDeletedFalseAndSessionTypeAndStatus(
+                    userId,
+                    InterviewSessionType.INTERVIEW,
+                    enumValue(com.miraprep.domain.InterviewStatus.class, status),
+                    pageable);
         }
 
         List<Long> sessionIds = sessions.getContent().stream().map(InterviewSession::getId).toList();
@@ -284,14 +295,15 @@ public class InterviewService {
         }
         List<Question> saved = questionRepository.saveAll(questions);
         session.setOutlineStatus(OutlineStatus.READY);
-        publishRuntimeStart(session, saved);
+        publishRuntimeStart(session, saved, "interview");
     }
 
     /**
      * 把创建时铸好的会话令牌与出题上下文交接给运行时。令牌缺失（过期或服务重启前创建）
      * 时只记日志：会话仍是 READY，用户重新创建一场即可，不该让回调失败。
      */
-    private void publishRuntimeStart(InterviewSession session, List<Question> questions) {
+    void publishRuntimeStart(
+            InterviewSession session, List<Question> questions, String mode) {
         String runtimeToken = runtimeTokenStore.get(runtimeTokenKey(session.getId()));
         if (runtimeToken == null) {
             LOGGER.warn(
@@ -312,6 +324,7 @@ public class InterviewService {
         eventPublisher.publishEvent(new InterviewRuntimeStartRequestedEvent(
                 new AiServiceClient.InterviewStartRequest(
                         session.getId(),
+                        mode,
                         runtimeToken,
                         session.getDurationMin(),
                         lower(session.getInterviewerStyle()),

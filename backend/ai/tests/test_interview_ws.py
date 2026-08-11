@@ -448,7 +448,9 @@ def test_websocket_rejects_unauthorized_session_after_completing_the_handshake(
     agent = FakeAgent(store)
 
     async def deny(_session_id: int, _access_token: str) -> None:
-        raise PermissionError("bad runtime token")
+        from app.services.interview_agent import RuntimeAuthorizationError
+
+        raise RuntimeAuthorizationError("bad runtime token")
 
     agent.authorize = deny  # type: ignore[method-assign]
     monkeypatch.setattr(
@@ -464,3 +466,22 @@ def test_websocket_rejects_unauthorized_session_after_completing_the_handshake(
             websocket.receive_json()
 
     assert closed.value.code == 4403
+
+
+def test_websocket_does_not_misreport_an_open_runtime_failure_as_authentication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingRuntime:
+        async def run(self, websocket, **_kwargs) -> None:  # type: ignore[no-untyped-def]
+            await websocket.accept()
+            raise ConnectionError("Deepgram idle timeout")
+
+    monkeypatch.setattr(interview_ws, "build_voice_runtime", FailingRuntime)
+
+    with TestClient(app).websocket_connect(
+        "/ws/interview/40?accessToken=test-runtime-token-40-at-least-32-chars"
+    ) as websocket:
+        with pytest.raises(WebSocketDisconnect) as closed:
+            websocket.receive_json()
+
+    assert closed.value.code == 1011

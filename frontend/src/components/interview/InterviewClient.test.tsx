@@ -1,9 +1,12 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect } from "react";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import InterviewClient from "./InterviewClient";
+import type { InterviewRuntimeState } from "./InterviewRuntimeTypes";
 import type { InterviewStreamEvent } from "@/lib/api/interview-stream";
+import type { ReportQuestion } from "@/lib/api/report";
 import {
   getInterviewVoicePreference,
   storeInterviewVoicePreference,
@@ -31,6 +34,95 @@ const voiceSocket: VoiceInterviewSocket = {
   close: vi.fn(),
 };
 let emitVoice: ((event: VoiceInterviewEvent) => void) | undefined;
+const enqueueAudio = vi.fn();
+const stopAudio = vi.fn();
+const unlockAudio = vi.fn();
+
+function stubMicrophoneCapture() {
+  vi.stubGlobal(
+    "AudioWorkletNode",
+    class {
+      port = { onmessage: null };
+      connect() {}
+      disconnect() {}
+    },
+  );
+  vi.stubGlobal(
+    "AudioContext",
+    class {
+      sampleRate = 16_000;
+      destination = {};
+      audioWorklet = { addModule: vi.fn().mockResolvedValue(undefined) };
+      resume = vi.fn().mockResolvedValue(undefined);
+      close = vi.fn().mockResolvedValue(undefined);
+      createMediaStreamSource = () => ({ connect() {}, disconnect() {} });
+      createGain = () => ({ gain: { value: 1 }, connect() {}, disconnect() {} });
+    },
+  );
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: {
+      getUserMedia: vi.fn().mockResolvedValue({
+        getTracks: () => [{ stop: vi.fn() }],
+      }),
+    },
+  });
+}
+
+function MockPracticeAnswerCard(
+  runtime: InterviewRuntimeState & {
+    question: ReportQuestion;
+    onRequestClose: () => void;
+  },
+) {
+  const setTtsPlayerHandle = runtime.setTtsPlayerHandle;
+  useEffect(() => {
+    setTtsPlayerHandle({
+      enqueue: enqueueAudio,
+      stop: stopAudio,
+      unlock: unlockAudio,
+    });
+    return () => {
+      setTtsPlayerHandle(null);
+    };
+  }, [setTtsPlayerHandle]);
+
+  return (
+    <div data-testid="headless-runtime" data-connection={runtime.connection}>
+      <button type="button" onClick={runtime.enableVoiceMode}>
+        开启测试语音
+      </button>
+      <button
+        type="button"
+        disabled={!runtime.canReplayQuestionAudio}
+        onClick={runtime.replayQuestionAudio}
+      >
+        重播测试题目
+      </button>
+    </div>
+  );
+}
+
+vi.mock("@/components/report/PracticeAnswerCard", () => ({
+  default: MockPracticeAnswerCard,
+}));
+
+const practiceQuestion: ReportQuestion = {
+  questionId: 11,
+  order: 1,
+  phase: "SELF_INTRO",
+  text: "请先介绍一下自己。",
+  focusPoints: [],
+  answer: "",
+  score: null,
+  thinkSeconds: null,
+  answerSeconds: null,
+  suggestedSeconds: null,
+  referenceAnswer: "",
+  suggestions: [],
+  followUpChain: [],
+  audioUrl: null,
+};
 
 vi.mock("next/navigation", () => ({
   useRouter: () => router,
@@ -82,6 +174,7 @@ vi.mock("@/lib/api/interview-ws", async () => {
 describe("InterviewClient runtime", () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   beforeEach(() => {
@@ -131,6 +224,9 @@ describe("InterviewClient runtime", () => {
     vi.mocked(voiceSocket.confirmTranscript).mockClear();
     vi.mocked(voiceSocket.finishAudio).mockClear();
     vi.mocked(voiceSocket.setVoice).mockClear();
+    enqueueAudio.mockClear();
+    stopAudio.mockClear();
+    unlockAudio.mockClear();
   });
 
   it("does not read browser storage while rendering the SSR HTML", () => {
@@ -144,9 +240,17 @@ describe("InterviewClient runtime", () => {
     render(<InterviewClient sessionId="42" />);
 
     expect(await screen.findByText("请先介绍一下自己。")).toBeInTheDocument();
-    expect(screen.getByTestId("interview-shell")).toHaveAttribute(
-      "data-theme",
-      "interview-dark",
+    const shell = screen.getByTestId("interview-shell");
+    expect(shell).not.toHaveAttribute("data-theme", "interview-dark");
+    expect(shell).toHaveClass(
+      "bg-white",
+      "text-[#171717]",
+      "dark:bg-[#0d0f12]",
+      "dark:text-[#f7f7f5]",
+    );
+    expect(screen.getByTestId("interview-header")).toHaveClass(
+      "bg-white/95",
+      "dark:bg-[#111318]/95",
     );
     expect(screen.getByText("我是小明。")).toBeInTheDocument();
     expect(
@@ -158,7 +262,11 @@ describe("InterviewClient runtime", () => {
     );
     expect(screen.getByTestId("floating-answer-composer")).toHaveAttribute(
       "data-surface",
-      "dark",
+      "adaptive",
+    );
+    expect(screen.getByTestId("unified-answer-composer")).toHaveClass(
+      "bg-white/95",
+      "dark:bg-[#17191f]/92",
     );
     expect(screen.getByTestId("floating-answer-composer")).not.toHaveClass(
       "border-t",
@@ -388,7 +496,7 @@ describe("InterviewClient runtime", () => {
     render(<InterviewClient sessionId="42" />);
     await screen.findByText("请先介绍一下自己。");
 
-    const textarea = screen.getByPlaceholderText("输入你的回答，Shift + Enter 换行");
+    const textarea = screen.getByRole("textbox", { name: "你的回答" });
     await user.type(textarea, "这是我的新回答");
     await user.click(screen.getByRole("button", { name: "提交回答" }));
 
@@ -426,7 +534,7 @@ describe("InterviewClient runtime", () => {
     render(<InterviewClient sessionId="42" />);
     await screen.findByText("请先介绍一下自己。");
 
-    const textarea = screen.getByPlaceholderText("输入你的回答，Shift + Enter 换行");
+    const textarea = screen.getByRole("textbox", { name: "你的回答" });
     await user.type(textarea, "这段回答应该立刻进入舞台");
     await user.click(screen.getByRole("button", { name: "提交回答" }));
 
@@ -520,7 +628,7 @@ describe("InterviewClient runtime", () => {
     render(<InterviewClient sessionId="42" />);
     await screen.findByText("请先介绍一下自己。");
 
-    const textarea = screen.getByPlaceholderText("输入你的回答，Shift + Enter 换行");
+    const textarea = screen.getByRole("textbox", { name: "你的回答" });
     await user.type(textarea, "不要丢掉我");
     await user.click(screen.getByRole("button", { name: "提交回答" }));
 
@@ -540,9 +648,10 @@ describe("InterviewClient runtime", () => {
     expect(flow.className).not.toContain("-translate-y");
   });
 
-  it("warns on unload and routes after an interview_end event", async () => {
+  it("keeps the closing words visible before routing after interview_end", async () => {
     render(<InterviewClient sessionId="42" />);
     await waitFor(() => expect(emit).toBeTypeOf("function"));
+    vi.useFakeTimers();
 
     const event = new Event("beforeunload", { cancelable: true });
     fireEvent(window, event);
@@ -550,17 +659,146 @@ describe("InterviewClient runtime", () => {
 
     act(() => {
       emit?.({
-        type: "interview_end",
-        payload: { reason: "completed" },
+        type: "token",
+        payload: {
+          text: "感谢你的参与，祝你接下来的面试顺利，再见！",
+          phase: "CLOSING",
+          questionId: 99,
+        },
         seq: 5,
       });
+      emit?.({
+        type: "interview_end",
+        payload: { reason: "completed" },
+        seq: 6,
+      });
+    });
+
+    expect(
+      screen.getByText("感谢你的参与，祝你接下来的面试顺利，再见！"),
+    ).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_999);
+    });
+    expect(push).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
     });
     expect(push).toHaveBeenCalledWith("/interview/42/result", {
       transitionTypes: ["nav-reveal"],
     });
   });
 
+  it("exposes a headless runtime without rendering the formal interview shell", async () => {
+    const onEnded = vi.fn();
+    render(
+      <InterviewClient
+        sessionId="42"
+        onEnded={onEnded}
+        practice={{ question: practiceQuestion, onRequestClose: vi.fn() }}
+      />,
+    );
+    await waitFor(() => expect(emit).toBeTypeOf("function"));
+
+    expect(screen.getByTestId("headless-runtime")).toBeInTheDocument();
+    expect(screen.queryByTestId("interview-shell")).not.toBeInTheDocument();
+
+    act(() => {
+      emit?.({
+        type: "interview_end",
+        payload: { reason: "practice_completed" },
+        seq: 5,
+      });
+    });
+    expect(onEnded).toHaveBeenCalledTimes(1);
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("replays only the latest question audio from the headless runtime", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: vi.fn() },
+    });
+    Object.defineProperty(globalThis, "AudioContext", {
+      configurable: true,
+      value: class {
+        resume = vi.fn().mockResolvedValue(undefined);
+        close = vi.fn().mockResolvedValue(undefined);
+      },
+    });
+
+    render(
+      <InterviewClient
+        sessionId="42"
+        onEnded={vi.fn()}
+        practice={{ question: practiceQuestion, onRequestClose: vi.fn() }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "开启测试语音" }));
+    await waitFor(() => expect(streamVoiceInterview).toHaveBeenCalled());
+
+    act(() => {
+      emitVoice?.({
+        type: "audio",
+        payload: {
+          chunk: "AAA=",
+          format: "pcm16/24k",
+          forQuestionId: 11,
+          frameIndex: 1,
+          isFinal: false,
+        },
+        seq: 8,
+      });
+      emitVoice?.({
+        type: "audio",
+        payload: {
+          chunk: "",
+          format: "pcm16/24k",
+          forQuestionId: 11,
+          isFinal: true,
+        },
+        seq: 9,
+      });
+      emitVoice?.({
+        type: "audio",
+        payload: {
+          chunk: "BBB=",
+          format: "pcm16/24k",
+          forQuestionId: 12,
+          frameIndex: 1,
+          isFinal: false,
+        },
+        seq: 10,
+      });
+      emitVoice?.({
+        type: "audio",
+        payload: {
+          chunk: "",
+          format: "pcm16/24k",
+          forQuestionId: 12,
+          isFinal: true,
+        },
+        seq: 11,
+      });
+    });
+
+    enqueueAudio.mockClear();
+    await user.click(screen.getByRole("button", { name: "重播测试题目" }));
+
+    expect(enqueueAudio).toHaveBeenCalledTimes(1);
+    expect(enqueueAudio).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({ forQuestionId: 12 }),
+      }),
+    );
+  });
+
   it("requires confirmation before manually ending the runtime", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const user = userEvent.setup();
     render(<InterviewClient sessionId="42" />);
     await screen.findByText("请先介绍一下自己。");
@@ -576,6 +814,27 @@ describe("InterviewClient runtime", () => {
         expect.any(AbortSignal),
       ),
     );
+    expect(push).not.toHaveBeenCalled();
+
+    act(() => {
+      emit?.({
+        type: "token",
+        payload: {
+          text: "感谢你的参与，评估结果稍后会生成。",
+          phase: "CLOSING",
+          questionId: 99,
+        },
+        seq: 5,
+      });
+      emit?.({
+        type: "interview_end",
+        payload: { reason: "manual" },
+        seq: 6,
+      });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
     expect(push).toHaveBeenCalledWith("/interview/42/result", {
       transitionTypes: ["nav-reveal"],
     });
@@ -609,24 +868,20 @@ describe("InterviewClient runtime", () => {
     expect(streamInterview).toHaveBeenCalledTimes(5);
   });
 
-  it("switches to WebSocket voice mode, exposes editable ASR, and confirms it", async () => {
+  it("lazily switches to WebSocket voice input, preserves the draft, and confirms edited ASR", async () => {
     const user = userEvent.setup();
-    Object.defineProperty(navigator, "mediaDevices", {
-      configurable: true,
-      value: { getUserMedia: vi.fn() },
-    });
-    Object.defineProperty(globalThis, "AudioContext", {
-      configurable: true,
-      value: class {
-        resume = vi.fn().mockResolvedValue(undefined);
-        close = vi.fn().mockResolvedValue(undefined);
-      },
-    });
+    stubMicrophoneCapture();
 
     render(<InterviewClient sessionId="42" />);
     await screen.findByText("请先介绍一下自己。");
-    await user.click(screen.getByRole("button", { name: "语音回答" }));
+    const editor = screen.getByRole("textbox", { name: "你的回答" });
+    await user.type(editor, "已有草稿");
+    await user.click(screen.getByRole("button", { name: "语音输入" }));
     await waitFor(() => expect(streamVoiceInterview).toHaveBeenCalled());
+    await user.click(screen.getByRole("button", { name: "停止并转写" }));
+    expect(screen.queryByRole("button", { name: "语音回答" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打字回答" })).not.toBeInTheDocument();
+    expect(editor).toHaveValue("已有草稿");
 
     act(() => {
       emitVoice?.({
@@ -636,27 +891,81 @@ describe("InterviewClient runtime", () => {
       });
     });
 
-    const editor = screen.getByPlaceholderText("转写内容会显示在这里，可编辑后提交");
-    expect(editor).toHaveValue("我负责核心模块");
+    expect(editor).toHaveValue("已有草稿 我负责核心模块");
     await user.clear(editor);
     await user.type(editor, "我负责了核心模块");
 
-    // 续录时服务端会为每个音频帧回一条带旧草稿的 ack，不能覆盖用户的编辑。
+    await user.click(screen.getByRole("button", { name: "语音输入" }));
     act(() => {
       emitVoice?.({
         type: "asr_partial",
-        payload: { text: "我负责核心模块", isFinal: false, acceptedAudioSeq: 4 },
+        payload: { text: "并补充了上线结果", isFinal: false, acceptedAudioSeq: 4 },
         seq: 9,
       });
     });
-    expect(editor).toHaveValue("我负责了核心模块");
+    expect(editor).toHaveValue("我负责了核心模块 并补充了上线结果");
+
+    act(() => {
+      emitVoice?.({
+        type: "error",
+        payload: {
+          code: "audio_sequence_gap",
+          message: "expected audioSeq 93",
+          expectedAudioSeq: 93,
+        },
+        seq: 10,
+      } as unknown as VoiceInterviewEvent);
+    });
+    expect(screen.queryByText("expected audioSeq 93")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "停止并转写" }));
 
     await user.click(screen.getByRole("button", { name: "提交回答" }));
 
     expect(voiceSocket.confirmTranscript).toHaveBeenCalledWith(
-      expect.objectContaining({ text: "我负责了核心模块", questionId: 11 }),
+      expect.objectContaining({
+        text: "我负责了核心模块 并补充了上线结果",
+        questionId: 11,
+      }),
     );
     expect(submitInterviewAnswer).not.toHaveBeenCalled();
+  });
+
+  it("returns to the idle microphone action immediately after recording stops", async () => {
+    const user = userEvent.setup();
+    stubMicrophoneCapture();
+    render(<InterviewClient sessionId="42" />);
+    await screen.findByText("请先介绍一下自己。");
+
+    await user.click(screen.getByRole("button", { name: "语音输入" }));
+    await waitFor(() => expect(streamVoiceInterview).toHaveBeenCalled());
+    await user.click(screen.getByRole("button", { name: "停止并转写" }));
+
+    expect(screen.queryByText("正在完成转写…")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "语音输入" })).toBeEnabled();
+  });
+
+  it("silently applies a recoverable audio cursor correction", async () => {
+    const user = userEvent.setup();
+    stubMicrophoneCapture();
+    render(<InterviewClient sessionId="42" />);
+    await screen.findByText("请先介绍一下自己。");
+    await user.click(screen.getByRole("button", { name: "语音输入" }));
+    await waitFor(() => expect(streamVoiceInterview).toHaveBeenCalled());
+
+    act(() => {
+      emitVoice?.({
+        type: "error",
+        payload: {
+          code: "audio_sequence_gap",
+          message: "expected audioSeq 93",
+          expectedAudioSeq: 93,
+        },
+        seq: 8,
+      } as unknown as VoiceInterviewEvent);
+    });
+
+    expect(screen.queryByText("expected audioSeq 93")).not.toBeInTheDocument();
   });
 
   it("enters voice mode when the setup wizard asked for a voice interview", async () => {
@@ -677,39 +986,34 @@ describe("InterviewClient runtime", () => {
     await screen.findByText("请先介绍一下自己。");
 
     await waitFor(() => expect(streamVoiceInterview).toHaveBeenCalled());
-    expect(screen.getByRole("button", { name: "语音回答" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(screen.queryByRole("button", { name: "语音回答" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打字回答" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "你的回答" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "语音输入" })).toBeInTheDocument();
     expect(streamInterview).not.toHaveBeenCalled();
   });
 
-  it("stops honouring the voice preference once the voice link is refused", async () => {
-    Object.defineProperty(navigator, "mediaDevices", {
-      configurable: true,
-      value: { getUserMedia: vi.fn() },
-    });
-    Object.defineProperty(globalThis, "AudioContext", {
-      configurable: true,
-      value: class {
-        resume = vi.fn().mockResolvedValue(undefined);
-        close = vi.fn().mockResolvedValue(undefined);
-      },
-    });
-    storeInterviewVoicePreference(42, true);
+  it("preserves the typed draft when a requested voice link is refused", async () => {
+    const user = userEvent.setup();
+    stubMicrophoneCapture();
     streamVoiceInterview.mockRejectedValue(
       new VoiceSocketCloseError("speech provider is not configured", 1013, false),
     );
 
     render(<InterviewClient sessionId="42" />);
+    await screen.findByText("请先介绍一下自己。");
+    const editor = screen.getByRole("textbox", { name: "你的回答" });
+    await user.type(editor, "不能丢失的文字草稿");
+    await user.click(screen.getByRole("button", { name: "语音输入" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("语音服务尚未配置");
+    expect(editor).toHaveValue("不能丢失的文字草稿");
+    expect(editor).toBeEnabled();
     // 偏好留着的话，刷新后又会被推回同一个连不上的语音链路。
     expect(getInterviewVoicePreference(42)).toBe(false);
   });
 
   it("syncs the interviewer breathing state with TTS playback", async () => {
-    const user = userEvent.setup();
     let finishPlayback: (() => void) | undefined;
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
@@ -732,10 +1036,10 @@ describe("InterviewClient runtime", () => {
         }));
       },
     });
+    storeInterviewVoicePreference(42, true);
 
     render(<InterviewClient sessionId="42" />);
     await screen.findByText("请先介绍一下自己。");
-    await user.click(screen.getByRole("button", { name: "语音回答" }));
     await waitFor(() => expect(streamVoiceInterview).toHaveBeenCalled());
 
     act(() => {
