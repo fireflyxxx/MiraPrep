@@ -13,6 +13,7 @@ import { motion } from "framer-motion";
 import Logo from "@/components/Logo";
 import PracticeAnswerCard from "@/components/report/PracticeAnswerCard";
 import type { ReportQuestion } from "@/lib/api/report";
+import type { PracticeTarget } from "@/lib/api/practice";
 import type {
   InterviewConnectionState,
   InterviewRuntimeState,
@@ -188,6 +189,8 @@ interface InterviewClientProps {
   onEnded?: () => void;
   practice?: {
     question: ReportQuestion;
+    target: PracticeTarget;
+    targetPrompt: string;
     onRequestClose: () => void;
   };
 }
@@ -1005,7 +1008,14 @@ export default function InterviewClient({
       <PracticeAnswerCard
         {...runtimeState}
         question={practice.question}
+        target={practice.target}
+        activeQuestionText={currentQuestion?.content || practice.targetPrompt}
+        isVoiceConnecting={isVoiceConnecting}
+        onBeforeVoiceStart={prepareVoiceStart}
+        onVoiceLevelChange={setVoiceLevel}
         onRequestClose={practice.onRequestClose}
+        recorderRef={recorderRef}
+        voiceLevel={voiceLevel}
       />
     );
   }

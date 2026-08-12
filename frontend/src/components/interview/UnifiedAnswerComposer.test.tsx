@@ -143,4 +143,30 @@ describe("UnifiedAnswerComposer", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button")).toHaveLength(2);
   });
+
+  it("keeps the practice editor clean with a fixed textarea and white submit action", () => {
+    render(
+      <UnifiedAnswerComposer
+        {...baseProps({ answerText: "练习回答", asrFinal: true })}
+        appearance="practice"
+        submitLabel="提交本次回答"
+        textareaLabel="本次回答"
+      />,
+    );
+
+    expect(screen.getByRole("textbox", { name: "本次回答" })).toHaveClass(
+      "resize-none",
+    );
+    expect(
+      screen.queryByText("转写会写入当前答案，也可以直接键盘修改"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("转写完成")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "语音输入" })).toHaveClass(
+      "rounded-[13px]",
+      "bg-white",
+    );
+    expect(
+      screen.getByRole("button", { name: "提交本次回答" }),
+    ).toHaveClass("bg-white", "text-[#3e352e]");
+  });
 });

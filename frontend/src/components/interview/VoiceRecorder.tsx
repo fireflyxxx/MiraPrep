@@ -60,7 +60,7 @@ interface VoiceRecorderProps {
   onRecordingChange: (recording: boolean) => void;
   onSilence: () => void;
   showWaveform?: boolean;
-  variant?: "default" | "compact";
+  variant?: "default" | "compact" | "inline-waveform";
 }
 
 const defaultLabels: VoiceRecorderLabels = {
@@ -83,6 +83,7 @@ const VoiceRecorder = forwardRef<VoiceRecorderHandle, VoiceRecorderProps>(
 }, ref) {
   const [recording, setRecording] = useState(false);
   const [level, setLevel] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const cleanupRef = useRef<(() => void) | null>(null);
   const lastSoundAtRef = useRef(0);
   const warnedRef = useRef(false);
@@ -114,6 +115,18 @@ const VoiceRecorder = forwardRef<VoiceRecorderHandle, VoiceRecorderProps>(
   };
 
   useEffect(() => () => cleanupRef.current?.(), []);
+
+  useEffect(() => {
+    if (!recording) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1_000));
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [recording]);
 
   const consumeSamples = (samples: Float32Array, sampleRate: number) => {
     let squareSum = 0;
@@ -221,8 +234,16 @@ const VoiceRecorder = forwardRef<VoiceRecorderHandle, VoiceRecorderProps>(
 
   const buttonLabels = labels ?? defaultLabels;
   const buttonLabel = recording ? buttonLabels.recording : buttonLabels.idle;
-  const ariaLabel = labels ? buttonLabel : recording ? "停止录音" : "开始录音";
-  const compact = variant === "compact";
+  const inlineWaveform = variant === "inline-waveform";
+  const ariaLabel = inlineWaveform && recording
+    ? "点击波形结束录音"
+    : labels
+      ? buttonLabel
+      : recording
+        ? "停止录音"
+        : "开始录音";
+  const compact = variant === "compact" || inlineWaveform;
+  const elapsedLabel = `${String(Math.floor(elapsedSeconds / 60)).padStart(2, "0")}:${String(elapsedSeconds % 60).padStart(2, "0")}`;
 
   return (
     <div
@@ -240,7 +261,13 @@ const VoiceRecorder = forwardRef<VoiceRecorderHandle, VoiceRecorderProps>(
         disabled={disabled && !recording}
         onClick={() => (recording ? stop() : void start())}
         className={
-          compact
+          inlineWaveform
+            ? `mira-button flex h-11 w-[154px] shrink-0 items-center justify-center gap-2 rounded-[13px] border text-xs font-semibold transition-colors ${
+                recording
+                  ? "border-orange-200 bg-orange-50 text-orange-700 shadow-[0_8px_18px_-15px_rgba(224,95,15,.62)] dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-200"
+                  : "border-black/10 bg-white text-[#3e352e] shadow-[0_7px_16px_-14px_rgba(51,39,30,.55)] dark:border-white/12 dark:bg-white/[0.06] dark:text-[#ececea]"
+              } disabled:cursor-not-allowed disabled:border-black/10 disabled:bg-black/5 disabled:text-black/35 dark:disabled:border-white/10 dark:disabled:bg-white/5 dark:disabled:text-white/35`
+            : compact
             ? `mira-button flex h-11 shrink-0 items-center justify-center gap-2 rounded-full border px-3.5 text-xs font-semibold transition-colors ${
                 recording
                   ? "border-red-200 bg-red-50 text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-200"
@@ -251,8 +278,23 @@ const VoiceRecorder = forwardRef<VoiceRecorderHandle, VoiceRecorderProps>(
               } disabled:cursor-not-allowed disabled:bg-[#d4d4d4]`
         }
       >
-        {recording ? <Square className="h-4 w-4" /> : <Mic className="h-5 w-5" />}
-        {buttonLabel}
+        {inlineWaveform && recording ? (
+          <>
+            <Waveform level={level} active label="实时麦克风音量" />
+            <span className="tabular-nums">{elapsedLabel}</span>
+          </>
+        ) : (
+          <>
+            {recording ? (
+              <Square className="h-4 w-4" />
+            ) : (
+              <Mic
+                className={`h-5 w-5 ${inlineWaveform ? "text-orange-500" : ""}`}
+              />
+            )}
+            {buttonLabel}
+          </>
+        )}
       </button>
       {showWaveform ? <Waveform level={level} active={recording} /> : null}
     </div>

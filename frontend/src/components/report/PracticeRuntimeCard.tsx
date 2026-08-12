@@ -2,10 +2,13 @@
 
 import InterviewClient from "@/components/interview/InterviewClient";
 import type { ReportQuestion } from "@/lib/api/report";
+import type { PracticeTarget } from "@/lib/api/practice";
 
 interface PracticeRuntimeCardProps {
   sessionId: string;
   question: ReportQuestion;
+  target: PracticeTarget;
+  targetPrompt: string;
   onEnded: () => void;
   onRequestClose: () => void;
 }
@@ -13,6 +16,8 @@ interface PracticeRuntimeCardProps {
 export default function PracticeRuntimeCard({
   sessionId,
   question,
+  target,
+  targetPrompt,
   onEnded,
   onRequestClose,
 }: PracticeRuntimeCardProps) {
@@ -20,7 +25,7 @@ export default function PracticeRuntimeCard({
     <InterviewClient
       sessionId={sessionId}
       onEnded={onEnded}
-      practice={{ question, onRequestClose }}
+      practice={{ question, target, targetPrompt, onRequestClose }}
     />
   );
 }

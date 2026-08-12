@@ -698,7 +698,12 @@ describe("InterviewClient runtime", () => {
       <InterviewClient
         sessionId="42"
         onEnded={onEnded}
-        practice={{ question: practiceQuestion, onRequestClose: vi.fn() }}
+        practice={{
+          question: practiceQuestion,
+          target: { targetType: "MAIN_QUESTION" },
+          targetPrompt: practiceQuestion.text,
+          onRequestClose: vi.fn(),
+        }}
       />,
     );
     await waitFor(() => expect(emit).toBeTypeOf("function"));
@@ -735,7 +740,12 @@ describe("InterviewClient runtime", () => {
       <InterviewClient
         sessionId="42"
         onEnded={vi.fn()}
-        practice={{ question: practiceQuestion, onRequestClose: vi.fn() }}
+        practice={{
+          question: practiceQuestion,
+          target: { targetType: "MAIN_QUESTION" },
+          targetPrompt: practiceQuestion.text,
+          onRequestClose: vi.fn(),
+        }}
       />,
     );
     await user.click(screen.getByRole("button", { name: "开启测试语音" }));

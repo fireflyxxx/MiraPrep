@@ -1,45 +1,56 @@
 "use client";
 
-import { Headphones, RotateCcw, X } from "lucide-react";
+import type { Ref } from "react";
+import { RotateCcw, X } from "lucide-react";
 import type { InterviewRuntimeState } from "@/components/interview/InterviewRuntimeTypes";
 import TTSPlayer from "@/components/interview/TTSPlayer";
-import VoiceRecorder from "@/components/interview/VoiceRecorder";
-import Waveform from "@/components/interview/Waveform";
+import UnifiedAnswerComposer from "@/components/interview/UnifiedAnswerComposer";
+import type { VoiceRecorderHandle } from "@/components/interview/VoiceRecorder";
 import type { ReportQuestion } from "@/lib/api/report";
+import type { PracticeTarget } from "@/lib/api/practice";
 
 export interface PracticeAnswerCardProps extends InterviewRuntimeState {
   question: ReportQuestion;
+  target: PracticeTarget;
+  activeQuestionText: string;
+  isVoiceConnecting: boolean;
+  onBeforeVoiceStart: () => boolean | Promise<boolean>;
+  onVoiceLevelChange: (level: number) => void;
   onRequestClose: () => void;
+  recorderRef: Ref<VoiceRecorderHandle>;
+  voiceLevel: number;
 }
 
 export default function PracticeAnswerCard({
   question,
+  target,
+  activeQuestionText,
   onRequestClose,
   answerText,
   asrFinal,
   canReplayQuestionAudio,
   connection,
   errorMessage,
-  interviewerSpeaking,
   isEnded,
   isLoading,
   isRecording,
   isSubmitting,
   isThinking,
-  voiceMode,
-  voiceNotice,
-  disableVoiceMode,
-  enableVoiceMode,
+  isVoiceConnecting,
   handleRecorderError,
   handleRecordingChange,
   handleSilence,
   handleTtsSpeakingChange,
   replayQuestionAudio,
+  onBeforeVoiceStart,
+  onVoiceLevelChange,
+  recorderRef,
   retryConnection,
   sendAudioFrame,
   setAnswerText,
   setTtsPlayerHandle,
   submitAnswer,
+  voiceLevel,
 }: PracticeAnswerCardProps) {
   const answerLocked =
     isLoading || isSubmitting || isThinking || isEnded;
@@ -60,7 +71,7 @@ export default function PracticeAnswerCard({
                   Focused practice
                 </p>
                 <h2 className="mt-1 text-xl font-semibold tracking-[-0.02em] sm:text-2xl">
-                  重新回答这道题
+                  {target.targetType === "MAIN_QUESTION" ? "重练主问题" : "重练此追问"}
                 </h2>
               </div>
               <button
@@ -81,10 +92,12 @@ export default function PracticeAnswerCard({
                 >
                   <div className="min-w-0">
                     <div className="font-display text-[10px] font-semibold tracking-[0.14em] text-primary uppercase">
-                      Question {String(question.order).padStart(2, "0")}
+                      {target.targetType === "MAIN_QUESTION"
+                        ? `Question ${String(question.order).padStart(2, "0")}`
+                        : `Follow-up ${String((target.followUpIndex ?? 0) + 1).padStart(2, "0")}`}
                     </div>
                     <p className="mt-2 text-[15px] leading-7 font-semibold tracking-[-0.01em] sm:text-base">
-                      {question.text}
+                      {activeQuestionText}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1 self-end sm:self-auto">
@@ -113,93 +126,29 @@ export default function PracticeAnswerCard({
                 </div>
               </section>
 
-              <div
-                role="group"
-                aria-label="回答方式"
-                className="mx-auto mt-5 flex w-fit rounded-full bg-surface-subtle p-1 text-xs"
-              >
-                <button
-                  type="button"
-                  aria-pressed={voiceMode}
-                  onClick={enableVoiceMode}
-                  className={`mira-button rounded-full px-4 py-2 font-medium ${
-                    voiceMode
-                      ? "bg-foreground text-background shadow-sm"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  语音回答
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={!voiceMode}
-                  onClick={disableVoiceMode}
-                  className={`mira-button rounded-full px-4 py-2 font-medium ${
-                    !voiceMode
-                      ? "bg-foreground text-background shadow-sm"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  文字回答
-                </button>
-              </div>
-
-              <div className="mt-4 rounded-2xl border border-border bg-surface p-3 shadow-[0_14px_38px_-28px_rgba(26,22,18,.45)] ring-1 ring-black/[0.02] focus-within:border-primary/55 focus-within:ring-4 focus-within:ring-primary/10">
-                {voiceMode ? (
-                  <div
-                    data-testid="practice-voice-controls"
-                    className="mb-3 flex flex-col items-center gap-2 rounded-xl bg-[#181818] px-4 py-4 text-white"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Headphones className="h-4 w-4 text-orange-300" />
-                      <Waveform
-                        level={interviewerSpeaking ? 0.78 : 0}
-                        active={interviewerSpeaking}
-                        label="题目语音播放状态"
-                      />
-                    </div>
-                    <div>
-                      <VoiceRecorder
-                        disabled={
-                          answerLocked || connection !== "connected"
-                        }
-                        onAudioFrame={sendAudioFrame}
-                        onRecordingChange={handleRecordingChange}
-                        onSilence={handleSilence}
-                        onError={handleRecorderError}
-                      />
-                    </div>
-                    <p className="m-0 text-center text-[11px] text-white/60">
-                      {voiceNotice ?? "点击麦克风开始回答，转写可在下方编辑"}
-                    </p>
-                  </div>
-                ) : null}
-
-                <textarea
-                  aria-label="本次回答"
-                  value={answerText}
-                  onChange={(event) => setAnswerText(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey && !submitDisabled) {
-                      event.preventDefault();
-                      void submitAnswer();
-                    }
-                  }}
-                  disabled={answerLocked}
-                  rows={6}
-                  placeholder={
-                    voiceMode
-                      ? "实时转写会显示在这里，提交前可以继续编辑……"
-                      : "用你自己的思路重新组织答案……"
-                  }
-                  className="min-h-36 w-full resize-y border-0 bg-transparent px-2 py-1 text-[14px] leading-7 outline-none placeholder:text-muted-foreground/65 disabled:cursor-not-allowed disabled:opacity-60"
+              <div className="mt-5">
+                <UnifiedAnswerComposer
+                  appearance="practice"
+                  answerLocked={answerLocked}
+                  answerText={answerText}
+                  asrFinal={asrFinal}
+                  isRecording={isRecording}
+                  isSubmitting={isSubmitting}
+                  isVoiceConnecting={isVoiceConnecting}
+                  onAnswerChange={setAnswerText}
+                  onAudioFrame={sendAudioFrame}
+                  onBeforeVoiceStart={onBeforeVoiceStart}
+                  onRecorderError={handleRecorderError}
+                  onRecordingChange={handleRecordingChange}
+                  onSilence={handleSilence}
+                  onSubmit={() => void submitAnswer()}
+                  onVoiceLevelChange={onVoiceLevelChange}
+                  recorderRef={recorderRef}
+                  submitDisabled={submitDisabled}
+                  submitLabel="提交本次回答"
+                  textareaLabel="本次回答"
+                  voiceLevel={voiceLevel}
                 />
-
-                {asrFinal && voiceMode ? (
-                  <p className="m-0 px-2 pt-2 text-xs text-emerald-700 dark:text-emerald-300">
-                    已收到最终转写，检查内容后即可提交
-                  </p>
-                ) : null}
               </div>
 
               {errorMessage ? (
@@ -221,10 +170,12 @@ export default function PracticeAnswerCard({
               ) : null}
             </div>
 
-            <footer className="flex shrink-0 flex-col gap-3 border-t border-border bg-surface px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+            <footer className="flex shrink-0 flex-col gap-3 border-t border-border bg-surface px-5 py-4 sm:px-7">
               <div>
                 <p className="m-0 text-xs font-medium text-muted-foreground">
-                  不会追问
+                  {target.targetType === "MAIN_QUESTION"
+                    ? "会根据回答继续追问，最多 3 次"
+                    : "回答后直接生成对比反馈"}
                 </p>
                 <p
                   role="status"
@@ -242,14 +193,6 @@ export default function PracticeAnswerCard({
                           : "正在连接…"}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => void submitAnswer()}
-                disabled={submitDisabled}
-                className="mira-button rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground shadow-[0_10px_24px_-12px_rgba(249,115,22,.65)] disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
-              >
-                {isSubmitting ? "正在提交…" : "提交本次回答"}
-              </button>
             </footer>
           </section>
   );

@@ -74,6 +74,7 @@ const report: InterviewReport = {
           question: "什么时候主动失效？",
           answer: "mutation 成功以后。",
           answerSeconds: 18,
+          score: 7,
           referenceAnswer: "在 mutation 成功后按 queryKey 精确失效。",
           suggestions: ["补充乐观更新失败时的回滚策略"],
         },
@@ -187,10 +188,11 @@ describe("ReportClient", () => {
     expect(screen.getByText("项目追问 4")).toBeInTheDocument();
   });
 
-  it("offers one retry action for every visible private report question", async () => {
+  it("offers main-question and follow-up retry actions on the private report", async () => {
     renderReport();
 
-    expect(await screen.findAllByRole("button", { name: "重练此题" })).toHaveLength(3);
+    expect(await screen.findAllByRole("button", { name: "重练主问题" })).toHaveLength(3);
+    expect(screen.getByRole("button", { name: "重练此追问" })).toBeInTheDocument();
   });
 
   it("starts exactly one practice request from the retry click", async () => {
@@ -206,13 +208,42 @@ describe("ReportClient", () => {
     const user = userEvent.setup();
     renderReport();
 
-    const retryButtons = await screen.findAllByRole("button", { name: "重练此题" });
+    const retryButtons = await screen.findAllByRole("button", { name: "重练主问题" });
     await user.click(retryButtons[0]);
 
     expect(await screen.findByText("正在准备单题练习")).toBeInTheDocument();
     expect(
       fetchMock.mock.calls.filter(([, init]) => init?.method === "POST"),
     ).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8080/api/v1/interviews/108/questions/1/retry",
+      expect.objectContaining({
+        body: JSON.stringify({ targetType: "MAIN_QUESTION" }),
+      }),
+    );
+  });
+
+  it("starts a no-follow-up retry for the selected historical follow-up", async () => {
+    const baseFetch = reportFetch();
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/interviews/108/questions/1/retry") && init?.method === "POST") {
+        return new Promise<Response>(() => {});
+      }
+      return baseFetch(input);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderReport();
+
+    await user.click(await screen.findByRole("button", { name: "重练此追问" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8080/api/v1/interviews/108/questions/1/retry",
+      expect.objectContaining({
+        body: JSON.stringify({ targetType: "FOLLOW_UP", followUpIndex: 0 }),
+      }),
+    );
   });
 
   it("keeps a stable skeleton while the report is loading", () => {
@@ -301,6 +332,9 @@ describe("ReportClient", () => {
     expect(screen.getAllByText("未作答")).not.toHaveLength(0);
     expect(screen.getByText("本题未作答")).toBeInTheDocument();
     expect(screen.queryByText(/用时 未记录/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "重练主问题" }),
+    ).not.toBeInTheDocument();
   });
 
   it("prints the same report body and keeps every question in the pdf DOM", async () => {

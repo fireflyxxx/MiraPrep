@@ -13,19 +13,44 @@ describe("practice API", () => {
     vi.unstubAllGlobals();
   });
 
-  it("creates a one-question practice under the source interview", async () => {
+  it("creates a main-question practice under the source interview", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       okResponse({ practiceSessionId: 56, runtimeToken: "practice-runtime-token" }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(createPractice("12", 34)).resolves.toEqual({
+    await expect(
+      createPractice("12", 34, { targetType: "MAIN_QUESTION" }),
+    ).resolves.toEqual({
       practiceSessionId: 56,
       runtimeToken: "practice-runtime-token",
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8080/api/v1/interviews/12/questions/34/retry",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ targetType: "MAIN_QUESTION" }),
+      }),
+    );
+  });
+
+  it("selects a historical follow-up by its zero-based index", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({ practiceSessionId: 57, runtimeToken: "follow-up-token" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createPractice("12", 34, {
+      targetType: "FOLLOW_UP",
+      followUpIndex: 0,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8080/api/v1/interviews/12/questions/34/retry",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ targetType: "FOLLOW_UP", followUpIndex: 0 }),
+      }),
     );
   });
 

@@ -17,6 +17,7 @@ import { storeInterviewRuntimeToken } from "@/lib/api/interview-stream";
 import {
   useCreatePractice,
   type CreatePracticeResponse,
+  type PracticeTarget,
 } from "@/lib/api/practice";
 import HistoryTrend from "./HistoryTrend";
 import PracticeDialog from "./PracticeDialog";
@@ -63,6 +64,7 @@ function toFollowUp(value: unknown): FollowUpReview | null {
     question: item.question,
     answer: item.answer,
     answerSeconds: typeof item.answerSeconds === "number" ? item.answerSeconds : null,
+    score: typeof item.score === "number" ? item.score : null,
     referenceAnswer:
       typeof item.referenceAnswer === "string"
         ? item.referenceAnswer
@@ -114,15 +116,16 @@ export default function ReportClient({ sessionId }: { sessionId: string }) {
   const [practiceLaunch, setPracticeLaunch] = useState<{
     attempt: number;
     question: ReportQuestion;
+    target: PracticeTarget;
     created: CreatePracticeResponse | null;
     error: string | null;
   } | null>(null);
 
-  const launchPractice = (question: ReportQuestion) => {
+  const launchPractice = (question: ReportQuestion, target: PracticeTarget) => {
     const attempt = ++launchSequence.current;
-    setPracticeLaunch({ attempt, question, created: null, error: null });
+    setPracticeLaunch({ attempt, question, target, created: null, error: null });
     createPractice(
-      { sourceSessionId: sessionId, questionId: question.questionId },
+      { sourceSessionId: sessionId, questionId: question.questionId, target },
       {
         onSuccess: (created) => {
           storeInterviewRuntimeToken(created.practiceSessionId, created.runtimeToken);
@@ -203,9 +206,10 @@ export default function ReportClient({ sessionId }: { sessionId: string }) {
             if (!open) setPracticeLaunch(null);
           }}
           question={practiceLaunch.question}
+          target={practiceLaunch.target}
           created={practiceLaunch.created}
           createError={practiceLaunch.error}
-          onRetry={() => launchPractice(practiceLaunch.question)}
+          onRetry={() => launchPractice(practiceLaunch.question, practiceLaunch.target)}
         />
       ) : null}
     </div>
@@ -225,7 +229,7 @@ export function ReportBody({
   report: InterviewReport;
   historyScores?: DimensionScores | null;
   trend?: ReactNode;
-  onRetryQuestion?: (question: ReportQuestion) => void;
+  onRetryQuestion?: (question: ReportQuestion, target: PracticeTarget) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [printing, setPrinting] = useState(false);
@@ -449,7 +453,7 @@ function QuestionReview({
   onRetry,
 }: {
   question: ReportQuestion;
-  onRetry?: (question: ReportQuestion) => void;
+  onRetry?: (question: ReportQuestion, target: PracticeTarget) => void;
 }) {
   const score = question.score;
   const qualitative =
@@ -563,9 +567,14 @@ function QuestionReview({
                   <p className="text-[13px] font-medium">
                     追问 {index + 1} · {item.question}
                   </p>
-                  <span className="shrink-0 text-[11.5px] text-muted-foreground">
-                    追问用时 {formatDuration(item.answerSeconds)}
-                  </span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="text-[11.5px] font-medium text-primary">
+                      {item.score === null ? "未评分" : `${item.score}/10`}
+                    </span>
+                    <span className="text-[11.5px] text-muted-foreground">
+                      追问用时 {formatDuration(item.answerSeconds)}
+                    </span>
+                  </div>
                 </div>
                 <p className="text-[13px] leading-relaxed text-muted-foreground">
                   <strong className="font-medium text-foreground">你的回答：</strong>
@@ -579,6 +588,22 @@ function QuestionReview({
                   <strong className="font-medium">本条建议：</strong>
                   {item.suggestions.join("；")}
                 </p>
+                {onRetry ? (
+                  <div className="mt-3 flex justify-end print:hidden">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onRetry(question, {
+                          targetType: "FOLLOW_UP",
+                          followUpIndex: index,
+                        })
+                      }
+                      className="mira-button rounded-[9px] border border-primary/25 bg-surface px-3.5 py-2 text-[12.5px] font-medium text-primary"
+                    >
+                      重练此追问
+                    </button>
+                  </div>
+                ) : null}
               </li>
             ))}
           </ol>
@@ -593,13 +618,13 @@ function QuestionReview({
               ? question.suggestions.join("；")
               : "继续保持当前答题节奏。"}
           </p>
-          {onRetry ? (
+          {onRetry && question.answer?.trim() && question.score !== null ? (
             <button
               type="button"
-              onClick={() => onRetry(question)}
+              onClick={() => onRetry(question, { targetType: "MAIN_QUESTION" })}
               className="mira-button shrink-0 rounded-[9px] border border-primary/25 bg-surface px-3.5 py-2 text-[12.5px] font-medium text-primary print:hidden"
             >
-              重练此题
+              重练主问题
             </button>
           ) : null}
         </div>

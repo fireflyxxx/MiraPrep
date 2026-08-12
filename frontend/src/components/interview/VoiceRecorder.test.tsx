@@ -201,6 +201,38 @@ describe("VoiceRecorder capture", () => {
     expect(onLevelChange.mock.calls.at(-1)?.[0]).toBeGreaterThan(0);
   });
 
+  it("replaces the inline voice button with a clickable waveform while recording", async () => {
+    const pipeline = stubCapturePipeline();
+    const user = userEvent.setup();
+
+    render(
+      <VoiceRecorder
+        labels={{ idle: "语音输入", recording: "停止并转写" }}
+        onAudioFrame={vi.fn()}
+        onRecordingChange={vi.fn()}
+        onError={vi.fn()}
+        onSilence={vi.fn()}
+        showWaveform={false}
+        variant="inline-waveform"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "语音输入" }));
+    pipeline.emit(new Float32Array(1_600).fill(0.4));
+
+    const stop = await screen.findByRole("button", {
+      name: "点击波形结束录音",
+    });
+    expect(stop).toHaveClass("w-[154px]", "bg-orange-50");
+    expect(
+      screen.getByRole("img", { name: "实时麦克风音量" }),
+    ).toBeVisible();
+    expect(screen.queryByText("停止并转写")).not.toBeInTheDocument();
+
+    await user.click(stop);
+    expect(screen.getByRole("button", { name: "语音输入" })).toBeVisible();
+  });
+
   it("warns once after eight quiet seconds and stays quiet again until sound returns", async () => {
     const pipeline = stubCapturePipeline();
     const onSilence = vi.fn();

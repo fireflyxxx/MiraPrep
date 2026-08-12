@@ -7,12 +7,21 @@ import PracticeAnswerCard from "./PracticeAnswerCard";
 
 const submitAnswer = vi.fn(async () => {});
 
-function TestHarness() {
+function TestHarness({
+  followUp = false,
+}: {
+  followUp?: boolean;
+} = {}) {
   const [answerText, setAnswerText] = useState("");
-  const [voiceMode, setVoiceMode] = useState(false);
   return (
     <PracticeAnswerCard
       question={question}
+      target={
+        followUp
+          ? { targetType: "FOLLOW_UP", followUpIndex: 0 }
+          : { targetType: "MAIN_QUESTION" }
+      }
+      activeQuestionText={followUp ? "请补充故障定位的第一步。" : question.text}
       onRequestClose={vi.fn()}
       answerText={answerText}
       asrFinal={false}
@@ -25,30 +34,29 @@ function TestHarness() {
       isRecording={false}
       isSubmitting={false}
       isThinking={false}
-      voiceMode={voiceMode}
-      voiceNotice={
-        voiceMode ? "语音模式已开启，按下麦克风后开始回答。" : null
-      }
-      disableVoiceMode={() => setVoiceMode(false)}
-      enableVoiceMode={() => setVoiceMode(true)}
+      isVoiceConnecting={false}
+      voiceMode={false}
+      voiceNotice={null}
+      disableVoiceMode={vi.fn()}
+      enableVoiceMode={vi.fn()}
       finishAudio={vi.fn()}
       handleRecorderError={vi.fn()}
       handleRecordingChange={vi.fn()}
       handleSilence={vi.fn()}
       handleTtsSpeakingChange={vi.fn()}
+      onBeforeVoiceStart={vi.fn().mockResolvedValue(true)}
+      onVoiceLevelChange={vi.fn()}
       replayQuestionAudio={vi.fn()}
+      recorderRef={null}
       retryConnection={vi.fn()}
       sendAudioFrame={vi.fn()}
       setAnswerText={setAnswerText}
       setTtsPlayerHandle={vi.fn()}
       submitAnswer={submitAnswer}
+      voiceLevel={0}
     />
   );
 }
-
-vi.mock("@/components/interview/VoiceRecorder", () => ({
-  default: () => <div data-testid="practice-voice-recorder">录音控制</div>,
-}));
 
 vi.mock("@/components/interview/TTSPlayer", () => ({
   default: () => <div data-testid="practice-tts-player" />,
@@ -77,9 +85,9 @@ describe("PracticeAnswerCard", () => {
   it("renders a focused single-question surface without formal interview chrome", () => {
     render(<TestHarness />);
 
-    expect(screen.getByRole("heading", { name: "重新回答这道题" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "重练主问题" })).toBeVisible();
     expect(screen.getByText(question.text)).toBeVisible();
-    expect(screen.getByText("不会追问")).toBeVisible();
+    expect(screen.getByText("会根据回答继续追问，最多 3 次")).toBeVisible();
     expect(screen.queryByText(/只提交一次/)).not.toBeInTheDocument();
     expect(screen.queryByTestId("interview-shell")).not.toBeInTheDocument();
     expect(screen.queryByText("Mira 面试官")).not.toBeInTheDocument();
@@ -90,22 +98,30 @@ describe("PracticeAnswerCard", () => {
     );
   });
 
-  it("keeps the answer while switching modes and submits it once", async () => {
+  it("uses one formal-style editor with an inline voice action and submits once", async () => {
     const user = userEvent.setup();
     render(<TestHarness />);
 
     const answer = screen.getByRole("textbox", { name: "本次回答" });
     const submit = screen.getByRole("button", { name: "提交本次回答" });
     expect(submit).toBeDisabled();
+    expect(screen.getByTestId("unified-answer-composer")).toBeVisible();
+    expect(screen.getByRole("button", { name: "语音输入" })).toBeVisible();
+    expect(screen.queryByRole("group", { name: "回答方式" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("practice-voice-controls")).not.toBeInTheDocument();
 
     await user.type(answer, "新的回答");
-    await user.click(screen.getByRole("button", { name: "语音回答" }));
-    expect(screen.getByTestId("practice-voice-recorder")).toBeVisible();
-    expect(answer).toHaveValue("新的回答");
-    await user.click(screen.getByRole("button", { name: "文字回答" }));
     expect(answer).toHaveValue("新的回答");
 
     await user.click(submit);
     expect(submitAnswer).toHaveBeenCalledTimes(1);
+  });
+
+  it("labels a historical follow-up as one-answer practice", () => {
+    render(<TestHarness followUp />);
+
+    expect(screen.getByRole("heading", { name: "重练此追问" })).toBeVisible();
+    expect(screen.getByText("请补充故障定位的第一步。")).toBeVisible();
+    expect(screen.getByText("回答后直接生成对比反馈")).toBeVisible();
   });
 });

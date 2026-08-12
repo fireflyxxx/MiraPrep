@@ -9,28 +9,54 @@ export interface CreatePracticeResponse {
   runtimeToken: string;
 }
 
+export type PracticeTargetType = "MAIN_QUESTION" | "FOLLOW_UP";
+
+export interface PracticeTarget {
+  targetType: PracticeTargetType;
+  followUpIndex?: number;
+}
+
+export interface PracticeFollowUp {
+  question: string;
+  answer: string;
+  score: number | null;
+  referenceAnswer: string;
+  suggestions: string[];
+}
+
 export interface PracticeAttempt {
   answer: string | null;
   score: number | null;
   referenceAnswer: string | null;
   suggestions: string[];
+  followUps: PracticeFollowUp[];
+}
+
+export interface PracticeAnswerComparison {
+  improvements: string[];
+  remainingGaps: string[];
+  scoreRationale: string;
 }
 
 export interface PracticeResult {
   status: "grading" | "ready" | "failed";
+  targetType: PracticeTargetType;
+  followUpIndex: number | null;
   question: string | null;
   source: PracticeAttempt | null;
   current: PracticeAttempt | null;
+  comparison: PracticeAnswerComparison | null;
   scoreDelta: number | null;
 }
 
 export function createPractice(
   sourceSessionId: string,
   questionId: number,
+  target: PracticeTarget,
 ): Promise<CreatePracticeResponse> {
   return apiClient<CreatePracticeResponse>(
     endpoints.practiceRetry(encodeURIComponent(sourceSessionId), questionId),
-    { method: "POST" },
+    { method: "POST", body: JSON.stringify(target) },
   );
 }
 
@@ -45,10 +71,12 @@ export function useCreatePractice() {
     mutationFn: ({
       sourceSessionId,
       questionId,
+      target,
     }: {
       sourceSessionId: string;
       questionId: number;
-    }) => createPractice(sourceSessionId, questionId),
+      target: PracticeTarget;
+    }) => createPractice(sourceSessionId, questionId, target),
   });
 }
 
