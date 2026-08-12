@@ -149,6 +149,25 @@ class ReportStatsApiIntegrationTest {
     }
 
     @Test
+    void reportDoesNotProjectTheClosingMessageAsAnUnansweredQuestion() throws Exception {
+        User owner = createUser();
+        InterviewSession session = session(owner, Instant.parse("2026-07-20T10:30:00Z"), false);
+        Question answered = question(session, 1, "请说明你的幂等设计。");
+        candidateAnswer(answered, "我使用稳定幂等键。", null);
+        Question closing = question(session, 2, "感谢参与，祝你面试顺利，再见！");
+        closing.setPhase(InterviewPhase.CLOSING);
+        questionRepository.save(closing);
+
+        postGradeResult(session.getId(), gradePayload(answered.getId(), 82, "A", false))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/reports/{id}", session.getId()).with(as(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.questions", hasSize(1)))
+                .andExpect(jsonPath("$.data.questions[0].text").value("请说明你的幂等设计。"));
+    }
+
+    @Test
     void successfulPartialCallbackKeepsAnAbortedSessionAborted() throws Exception {
         User owner = createUser();
         InterviewSession session = session(owner, Instant.parse("2026-07-20T10:30:00Z"), true);

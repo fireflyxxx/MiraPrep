@@ -11,9 +11,16 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Logo from "@/components/Logo";
-import VoiceRecorder from "./VoiceRecorder";
+import PracticeAnswerCard from "@/components/report/PracticeAnswerCard";
+import type { ReportQuestion } from "@/lib/api/report";
+import type { PracticeTarget } from "@/lib/api/practice";
+import type {
+  InterviewConnectionState,
+  InterviewRuntimeState,
+} from "./InterviewRuntimeTypes";
+import UnifiedAnswerComposer from "./UnifiedAnswerComposer";
+import type { VoiceRecorderHandle } from "./VoiceRecorder";
 import TTSPlayer, { type TTSPlayerHandle } from "./TTSPlayer";
-import Waveform from "./Waveform";
 import {
   clearInterviewEventCursor,
   clearInterviewRuntimeToken,
@@ -33,13 +40,14 @@ import {
   storeInterviewVoicePreference,
   streamVoiceInterview,
   VoiceSocketCloseError,
+  type TtsAudioEvent,
   type VoiceInterviewEvent,
   type VoiceInterviewSocket,
 } from "@/lib/api/interview-ws";
 import { motionTransition } from "@/lib/motion/constants";
 import { useReducedMotionSafe } from "@/lib/motion/use-reduced-motion";
 
-type ConnectionState = "connecting" | "connected" | "reconnecting" | "failed";
+type ConnectionState = InterviewConnectionState;
 
 type ChatMessage = InterviewMessage & {
   key: string;
@@ -65,6 +73,8 @@ type InterviewTokenPayload = Extract<
 >["payload"];
 
 const reconnectDelays = [1_000, 2_000, 4_000, 8_000, 15_000];
+const MIN_CLOSING_DISPLAY_MS = 4_000;
+const MAX_CLOSING_WAIT_MS = 15_000;
 
 function normalizePhase(phase?: string | null): string {
   return phase?.trim().toUpperCase() || "GREETING";
@@ -149,7 +159,47 @@ function formatClock(seconds: number): string {
     .join(":");
 }
 
-export default function InterviewClient({ sessionId }: { sessionId: string }) {
+function appendVoiceTranscript(base: string, addition: string): string {
+  const left = base.trimEnd();
+  const right = addition.trimStart();
+  if (!left) return right;
+  if (!right) return left;
+  const alreadySeparated =
+    /[\s，。！？；：,.!?;:]$/.test(left) ||
+    /^[\s，。！？；：,.!?;:]/.test(right);
+  return `${left}${alreadySeparated ? "" : " "}${right}`;
+}
+
+function mergeVoiceTranscript(
+  answerAtRecordingStart: string,
+  transcriptAtRecordingStart: string,
+  transcript: string,
+): string {
+  if (!transcript.trim()) return answerAtRecordingStart;
+  if (transcript.startsWith(answerAtRecordingStart)) return transcript;
+  const addition =
+    transcriptAtRecordingStart && transcript.startsWith(transcriptAtRecordingStart)
+      ? transcript.slice(transcriptAtRecordingStart.length)
+      : transcript;
+  return appendVoiceTranscript(answerAtRecordingStart, addition);
+}
+
+interface InterviewClientProps {
+  sessionId: string;
+  onEnded?: () => void;
+  practice?: {
+    question: ReportQuestion;
+    target: PracticeTarget;
+    targetPrompt: string;
+    onRequestClose: () => void;
+  };
+}
+
+export default function InterviewClient({
+  sessionId,
+  onEnded,
+  practice,
+}: InterviewClientProps) {
   const reducedMotion = useReducedMotionSafe();
   const router = useRouter();
   const numericSessionId = Number(sessionId);
@@ -161,6 +211,8 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
   const [answerText, setAnswerText] = useState("");
   const [voiceMode, setVoiceMode] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isVoiceConnecting, setIsVoiceConnecting] = useState(false);
+  const [voiceLevel, setVoiceLevel] = useState(0);
   const [asrFinal, setAsrFinal] = useState(false);
   const [interviewerSpeaking, setInterviewerSpeaking] = useState(false);
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
@@ -179,13 +231,25 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
   const [connectionRetry, setConnectionRetry] = useState(0);
   const [pendingAnswer, setPendingAnswer] = useState<PendingAnswer | null>(null);
   const [clockNow, setClockNow] = useState<number | null>(null);
+  const [canReplayQuestionAudio, setCanReplayQuestionAudio] = useState(false);
   const lastEventSeqRef = useRef(0);
   const restoredReplayRef = useRef<RestoredInterviewerReplay[]>([]);
   const endedRef = useRef(false);
   const requestControllerRef = useRef<AbortController | null>(null);
   const voiceSocketRef = useRef<VoiceInterviewSocket | null>(null);
+  const recorderRef = useRef<VoiceRecorderHandle>(null);
+  const pendingVoiceStartRef = useRef(false);
   const ttsPlayerRef = useRef<TTSPlayerHandle | null>(null);
   const lastTranscriptRef = useRef("");
+  const answerAtRecordingStartRef = useRef("");
+  const transcriptAtRecordingStartRef = useRef("");
+  const questionAudioRef = useRef<TtsAudioEvent[]>([]);
+  const questionAudioIdRef = useRef<string | number | null | undefined>(undefined);
+  const closingDelayReachedRef = useRef(false);
+  const pendingResultRef = useRef(false);
+  const interviewerSpeakingRef = useRef(false);
+  const closingTimerRef = useRef<number | null>(null);
+  const closingFallbackTimerRef = useRef<number | null>(null);
 
   const currentQuestion = useMemo(
     () =>
@@ -311,15 +375,62 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
   const goResult = useCallback(() => {
     if (endedRef.current) return;
     endedRef.current = true;
+    pendingResultRef.current = false;
+    if (closingTimerRef.current !== null) {
+      window.clearTimeout(closingTimerRef.current);
+      closingTimerRef.current = null;
+    }
+    if (closingFallbackTimerRef.current !== null) {
+      window.clearTimeout(closingFallbackTimerRef.current);
+      closingFallbackTimerRef.current = null;
+    }
     setIsEnded(true);
     clearInterviewRuntimeToken(numericSessionId);
     clearInterviewEventCursor(numericSessionId);
     clearInterviewAudioCursor(numericSessionId);
     ttsPlayerRef.current?.stop();
+    if (onEnded) {
+      onEnded?.();
+      return;
+    }
     router.push(`/interview/${sessionId}/result`, {
       transitionTypes: ["nav-reveal"],
     });
-  }, [numericSessionId, router, sessionId]);
+  }, [numericSessionId, onEnded, router, sessionId]);
+
+  const scheduleResultAfterClosing = useCallback(() => {
+    if (practice) {
+      goResult();
+      return;
+    }
+    if (pendingResultRef.current) return;
+    pendingResultRef.current = true;
+    closingDelayReachedRef.current = false;
+    closingTimerRef.current = window.setTimeout(() => {
+      closingDelayReachedRef.current = true;
+      closingTimerRef.current = null;
+      if (!interviewerSpeakingRef.current) goResult();
+    }, MIN_CLOSING_DISPLAY_MS);
+    closingFallbackTimerRef.current = window.setTimeout(
+      goResult,
+      MAX_CLOSING_WAIT_MS,
+    );
+  }, [goResult, practice]);
+
+  const handleTtsSpeakingChange = useCallback(
+    (speaking: boolean) => {
+      interviewerSpeakingRef.current = speaking;
+      setInterviewerSpeaking(speaking);
+      if (
+        !speaking &&
+        pendingResultRef.current &&
+        closingDelayReachedRef.current
+      ) {
+        goResult();
+      }
+    },
+    [goResult],
+  );
 
   const recordRealtimeEvent = useCallback(
     (event: { seq: number }) => {
@@ -346,7 +457,7 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
         return;
       }
       if (event.type === "interview_end") {
-        goResult();
+        scheduleResultAfterClosing();
         return;
       }
       if (event.type === "error") {
@@ -399,23 +510,36 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
         ];
       });
     },
-    [goResult, isRestoredReplayToken, recordRealtimeEvent],
+    [isRestoredReplayToken, recordRealtimeEvent, scheduleResultAfterClosing],
   );
 
   const handleVoiceEvent = useCallback(
     (event: VoiceInterviewEvent) => {
+      if (
+        event.type === "error" &&
+        "code" in event.payload &&
+        event.payload.code === "audio_sequence_gap"
+      ) {
+        if (!recordRealtimeEvent(event)) return;
+        setErrorMessage(null);
+        setVoiceNotice(null);
+        return;
+      }
       if (event.type === "asr_partial") {
         if (!recordRealtimeEvent(event)) return;
         // 每个音频帧服务端都会回一条 ack，内容是同一份草稿。重复回填会把
         // 用户在转写结果上的手工编辑冲掉，所以只在转写真的变化时才覆盖。
-        if (
-          !event.payload.isFinal &&
-          event.payload.text === lastTranscriptRef.current
-        ) {
+        if (!event.payload.text.trim()) return;
+        if (event.payload.text === lastTranscriptRef.current) {
           return;
         }
+        const mergedTranscript = mergeVoiceTranscript(
+          answerAtRecordingStartRef.current,
+          transcriptAtRecordingStartRef.current,
+          event.payload.text,
+        );
         lastTranscriptRef.current = event.payload.text;
-        setAnswerText(event.payload.text);
+        setAnswerText(mergedTranscript);
         setAsrFinal(event.payload.isFinal);
         setVoiceNotice(
           event.payload.isFinal ? "转写完成，可编辑后提交。" : "正在实时转写…",
@@ -424,6 +548,18 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
       }
       if (event.type === "audio") {
         if (!recordRealtimeEvent(event)) return;
+        const audioQuestionId = event.payload.forQuestionId ?? null;
+        if (questionAudioIdRef.current !== audioQuestionId) {
+          questionAudioIdRef.current = audioQuestionId;
+          questionAudioRef.current = [];
+          setCanReplayQuestionAudio(false);
+        }
+        if (event.payload.chunk) {
+          questionAudioRef.current.push(event);
+        }
+        if (event.payload.isFinal) {
+          setCanReplayQuestionAudio(questionAudioRef.current.length > 0);
+        }
         ttsPlayerRef.current?.enqueue(event);
         return;
       }
@@ -440,6 +576,18 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(
+    () => () => {
+      if (closingTimerRef.current !== null) {
+        window.clearTimeout(closingTimerRef.current);
+      }
+      if (closingFallbackTimerRef.current !== null) {
+        window.clearTimeout(closingFallbackTimerRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -524,7 +672,11 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
 
     const connect = async () => {
       let attempt = 0;
-      while (!controller.signal.aborted && !endedRef.current) {
+      while (
+        !controller.signal.aborted &&
+        !endedRef.current &&
+        !pendingResultRef.current
+      ) {
         try {
           setConnection(attempt === 0 ? "connecting" : "reconnecting");
           if (voiceMode) {
@@ -538,6 +690,11 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
                 activeVoiceSocket = socket;
                 voiceSocketRef.current = socket;
                 setConnection("connected");
+                setIsVoiceConnecting(false);
+                if (pendingVoiceStartRef.current) {
+                  pendingVoiceStartRef.current = false;
+                  void recorderRef.current?.start();
+                }
               },
             });
           } else {
@@ -565,6 +722,8 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
                   : "语音连接建立失败，已自动切回文字回答。",
             );
             setVoiceNotice(null);
+            pendingVoiceStartRef.current = false;
+            setIsVoiceConnecting(false);
             // 录音组件会随语音模式卸载，不会再回调 onRecordingChange，
             // 这里必须自己把录音态清掉，否则提交按钮会一直禁用。
             setIsRecording(false);
@@ -580,9 +739,16 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
           activeVoiceSocket = null;
         }
 
-        if (controller.signal.aborted || endedRef.current) return;
+        if (
+          controller.signal.aborted ||
+          endedRef.current ||
+          pendingResultRef.current
+        )
+          return;
         attempt += 1;
         if (attempt >= reconnectDelays.length) {
+          pendingVoiceStartRef.current = false;
+          setIsVoiceConnecting(false);
           setConnection("failed");
           return;
         }
@@ -686,6 +852,8 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
       setAsrFinal(false);
       setVoiceNotice(null);
       lastTranscriptRef.current = "";
+      answerAtRecordingStartRef.current = "";
+      transcriptAtRecordingStartRef.current = "";
     } catch {
       setMessages((items) => items.filter((item) => item.key !== localKey));
       setAnswerText(content);
@@ -717,6 +885,25 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
     setVoiceMode(false);
   };
 
+  const prepareVoiceStart = async () => {
+    if (!supportsVoiceMode()) {
+      setErrorMessage("当前浏览器不支持完整语音能力，仍可继续使用文字回答。");
+      return false;
+    }
+    if (voiceSocketRef.current) {
+      ttsPlayerRef.current?.unlock();
+      return true;
+    }
+
+    setErrorMessage(null);
+    ttsPlayerRef.current?.unlock();
+    pendingVoiceStartRef.current = true;
+    setIsVoiceConnecting(true);
+    setConnection("connecting");
+    setVoiceMode(true);
+    return false;
+  };
+
   const handleManualEnd = async () => {
     if (!runtimeToken) return;
     setErrorMessage(null);
@@ -728,11 +915,110 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
         controller.signal,
       );
       setConfirmEndOpen(false);
-      goResult();
+      setIsThinking(true);
     } catch {
       setErrorMessage("结束请求发送失败，请检查网络后重试。");
     }
   };
+
+  const retryConnection = () => {
+    setConnection("connecting");
+    setErrorMessage(null);
+    setConnectionRetry((value) => value + 1);
+  };
+
+  const sendAudioFrame = (frame: Uint8Array) => {
+    if (!voiceSocketRef.current?.sendAudio(frame)) {
+      setErrorMessage("语音连接尚未就绪，请等待重连或切换到文字回答。");
+    }
+  };
+
+  const finishAudio = () => {
+    voiceSocketRef.current?.finishAudio();
+  };
+
+  const handleRecordingChange = (recording: boolean) => {
+    setIsRecording(recording);
+    if (recording) {
+      answerAtRecordingStartRef.current = answerText;
+      transcriptAtRecordingStartRef.current = lastTranscriptRef.current;
+      setAsrFinal(false);
+      setVoiceNotice("正在录音并实时转写…");
+      return;
+    }
+    finishAudio();
+    setVoiceNotice(null);
+  };
+
+  const handleSilence = () => {
+    setVoiceNotice("暂时没有检测到声音，请靠近麦克风或检查系统输入设备。");
+  };
+
+  const handleRecorderError = (message: string) => {
+    pendingVoiceStartRef.current = false;
+    setIsVoiceConnecting(false);
+    setErrorMessage(message);
+    setVoiceNotice(null);
+    setVoiceMode(false);
+  };
+
+  const replayQuestionAudio = () => {
+    const player = ttsPlayerRef.current;
+    if (!player || questionAudioRef.current.length === 0) return;
+    player.stop();
+    player.unlock();
+    questionAudioRef.current.forEach((event) => player.enqueue(event));
+  };
+
+  const setTtsPlayerHandle = useCallback((handle: TTSPlayerHandle | null) => {
+    ttsPlayerRef.current = handle;
+  }, []);
+
+  const runtimeState: InterviewRuntimeState = {
+    answerText,
+    asrFinal,
+    canReplayQuestionAudio,
+    connection,
+    errorMessage,
+    interviewerSpeaking,
+    isEnded,
+    isLoading,
+    isRecording,
+    isSubmitting,
+    isThinking,
+    voiceMode,
+    voiceNotice,
+    disableVoiceMode,
+    enableVoiceMode,
+    finishAudio,
+    handleRecorderError,
+    handleRecordingChange,
+    handleSilence,
+    handleTtsSpeakingChange,
+    replayQuestionAudio,
+    retryConnection,
+    sendAudioFrame,
+    setAnswerText,
+    setTtsPlayerHandle,
+    submitAnswer: handleSubmitAnswer,
+  };
+
+  if (practice) {
+    return (
+      <PracticeAnswerCard
+        {...runtimeState}
+        question={practice.question}
+        target={practice.target}
+        activeQuestionText={currentQuestion?.content || practice.targetPrompt}
+        isVoiceConnecting={isVoiceConnecting}
+        onBeforeVoiceStart={prepareVoiceStart}
+        onVoiceLevelChange={setVoiceLevel}
+        onRequestClose={practice.onRequestClose}
+        recorderRef={recorderRef}
+        voiceLevel={voiceLevel}
+      />
+    );
+  }
 
   // questionId 表示大纲主问题，追问会沿用同一个 id；进度应按实际提问轮次增长。
   const askedQuestionCount = reviewQuestions.length;
@@ -740,15 +1026,17 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
   return (
     <div
       data-testid="interview-shell"
-      data-theme="interview-dark"
-      className="flex h-dvh min-h-[620px] flex-col overflow-hidden bg-[#0d0f12] text-[#f7f7f5] [color-scheme:dark]"
+      className="flex h-dvh min-h-[620px] flex-col overflow-hidden bg-white text-[#171717] [color-scheme:light] dark:bg-[#0d0f12] dark:text-[#f7f7f5] dark:[color-scheme:dark]"
     >
-      <header className="shrink-0 border-b border-white/10 bg-[#111318]/95 px-4 py-3.5 backdrop-blur-xl md:px-7">
+      <header
+        data-testid="interview-header"
+        className="shrink-0 border-b border-black/10 bg-white/95 px-4 py-3.5 backdrop-blur-xl dark:border-white/10 dark:bg-[#111318]/95 md:px-7"
+      >
         <div className="mx-auto flex max-w-[1040px] items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <Logo />
-            <span className="hidden h-[18px] w-px bg-white/15 sm:block" />
-            <span className="truncate text-[13px] font-medium text-[#c7c8cb]">
+            <span className="hidden h-[18px] w-px bg-black/10 dark:bg-white/15 sm:block" />
+            <span className="truncate text-[13px] font-medium text-[#525252] dark:text-[#c7c8cb]">
               面试会话 #{sessionId}
             </span>
           </div>
@@ -764,12 +1052,12 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
                     ? "critical"
                     : "in-progress"
               }
-              className={`inline-flex h-8 items-center gap-2 border-r border-white/10 pr-3 text-[11.5px] font-medium tracking-[0.01em] ${
+              className={`inline-flex h-8 items-center gap-2 border-r border-black/10 pr-3 text-[11.5px] font-medium tracking-[0.01em] dark:border-white/10 ${
                 connection === "connected"
-                  ? "text-[#a9adb4]"
+                  ? "text-[#525252] dark:text-[#a9adb4]"
                 : connection === "failed"
-                    ? "text-red-300"
-                    : "text-amber-300"
+                    ? "text-red-600 dark:text-red-300"
+                    : "text-amber-700 dark:text-amber-300"
               }`}
             >
               <span
@@ -799,22 +1087,28 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
                   setErrorMessage(null);
                   setConnectionRetry((value) => value + 1);
                 }}
-                className="mira-button -ml-1 rounded-md px-2 py-1.5 text-[12px] font-medium text-red-300 underline decoration-red-400/40 underline-offset-4 hover:bg-red-400/10"
+                className="mira-button -ml-1 rounded-md px-2 py-1.5 text-[12px] font-medium text-red-600 underline decoration-red-400/40 underline-offset-4 hover:bg-red-400/10 dark:text-red-300"
               >
                 重新连接
               </button>
             )}
+            {voiceMode ? (
+              <TTSPlayer
+                ref={ttsPlayerRef}
+                onSpeakingChange={handleTtsSpeakingChange}
+              />
+            ) : null}
             <button
               type="button"
               onClick={() => setReviewOpen(true)}
-              className="mira-button rounded-[9px] border border-white/12 bg-white/[0.06] px-3 py-2 text-[13px] text-[#e8e8e6] hover:bg-white/10"
+              className="mira-button rounded-[9px] border border-black/10 bg-white px-3 py-2 text-[13px] text-[#262626] hover:bg-black/[0.04] dark:border-white/12 dark:bg-white/[0.06] dark:text-[#e8e8e6] dark:hover:bg-white/10"
             >
               ↗ 回看
             </button>
             <button
               type="button"
               onClick={() => setConfirmEndOpen(true)}
-              className="mira-button rounded-[9px] border border-white/12 bg-white/[0.06] px-3 py-2 text-[13px] text-[#c7c8cb] hover:border-red-400/40 hover:bg-red-400/10 hover:text-red-300"
+              className="mira-button rounded-[9px] border border-black/10 bg-white px-3 py-2 text-[13px] text-[#525252] hover:border-red-400/40 hover:bg-red-50 hover:text-red-600 dark:border-white/12 dark:bg-white/[0.06] dark:text-[#c7c8cb] dark:hover:bg-red-400/10 dark:hover:text-red-300"
             >
               结束面试
             </button>
@@ -824,7 +1118,7 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
 
       <main className="relative flex min-h-0 flex-1 flex-col">
         <div className="shrink-0 px-4 py-3">
-          <div className="mx-auto mb-2 flex max-w-[920px] items-center justify-between text-[11.5px] text-[#9da1a8]">
+          <div className="mx-auto mb-2 flex max-w-[920px] items-center justify-between text-[11.5px] text-[#737373] dark:text-[#9da1a8]">
             <span aria-label="面试总用时" className="tabular-nums">
               总用时 {formatClock(totalElapsed)}
             </span>
@@ -857,16 +1151,16 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
             aria-hidden="true"
           >
             <span className="absolute top-[8%] left-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-orange-500/12 blur-[100px]" />
-            <span className="absolute right-[8%] bottom-[-18%] h-64 w-64 rounded-full bg-indigo-500/8 blur-[90px]" />
+            <span className="absolute right-[8%] bottom-[-18%] h-64 w-64 rounded-full bg-indigo-500/[0.04] blur-[90px] dark:bg-indigo-500/8" />
           </div>
 
           {isLoading ? (
-            <div className="relative flex flex-col items-center gap-4 text-sm text-[#9da1a8]">
+            <div className="relative flex flex-col items-center gap-4 text-sm text-[#737373] dark:text-[#9da1a8]">
               <StageIcon thinking />
               正在恢复本场面试…
             </div>
           ) : !activeExchange.interviewer && !errorMessage ? (
-            <div className="relative flex flex-col items-center gap-4 text-sm text-[#9da1a8]">
+            <div className="relative flex flex-col items-center gap-4 text-sm text-[#737373] dark:text-[#9da1a8]">
               <StageIcon thinking />
               面试官正在准备开场问题
             </div>
@@ -918,14 +1212,14 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
                     className="object-cover"
                   />
                 </div>
-                <span className="absolute right-0.5 bottom-0.5 h-3.5 w-3.5 rounded-full border-[3px] border-[#0d0f12] bg-emerald-400" />
+                <span className="absolute right-0.5 bottom-0.5 h-3.5 w-3.5 rounded-full border-[3px] border-white bg-emerald-500 dark:border-[#0d0f12] dark:bg-emerald-400" />
               </motion.div>
 
-              <div className="mb-5 text-[11px] font-medium tracking-[0.16em] text-[#999da5] uppercase">
+              <div className="mb-5 text-[11px] font-medium tracking-[0.16em] text-[#737373] uppercase dark:text-[#999da5]">
                 Mira 面试官
               </div>
 
-              <p className="m-0 max-w-[880px] text-[clamp(1.4rem,2.4vw,2.2rem)] leading-[1.5] font-medium tracking-[-0.025em] text-[#f4f4f2]">
+              <p className="m-0 max-w-[880px] text-[clamp(1.4rem,2.4vw,2.2rem)] leading-[1.5] font-medium tracking-[-0.025em] text-[#171717] dark:text-[#f4f4f2]">
                 {activeExchange.interviewer.content}
                 {activeExchange.interviewer.streaming && (
                   <span
@@ -940,14 +1234,14 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
                   data-testid="candidate-stage-answer"
                   className="animate-mira-answer-pop mt-8 w-full max-w-[760px] text-center md:mt-10"
                 >
-                  <p className="m-0 whitespace-pre-wrap text-[clamp(1.05rem,1.6vw,1.35rem)] leading-[1.75] font-normal text-[#b8bbc1]">
+                  <p className="m-0 whitespace-pre-wrap text-[clamp(1.05rem,1.6vw,1.35rem)] leading-[1.75] font-normal text-[#525252] dark:text-[#b8bbc1]">
                     {activeExchange.answer.content}
                   </p>
                 </div>
               )}
 
               {(isSubmitting || isThinking) && (
-                <div className="mt-6 inline-flex items-center gap-2 text-xs text-[#8a8a8a]">
+                <div className="mt-6 inline-flex items-center gap-2 text-xs text-[#737373] dark:text-[#8a8a8a]">
                   <span className="flex gap-1">
                     {[0, 1, 2].map((item) => (
                       <span
@@ -965,140 +1259,52 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
 
         <footer
           data-testid="floating-answer-composer"
-          data-surface="dark"
+          data-surface="adaptive"
           className="pointer-events-none absolute inset-x-0 bottom-0 z-30 px-4 pb-[max(14px,env(safe-area-inset-bottom))] max-sm:bottom-14 md:px-8"
         >
           <div className="pointer-events-auto mx-auto max-w-[840px]">
           {errorMessage && (
             <div
               role="alert"
-              className="mx-auto mb-2 max-w-[620px] rounded-xl border border-red-400/25 bg-red-950/80 px-3 py-2 text-center text-xs text-red-200 shadow-sm backdrop-blur"
+              className="mx-auto mb-2 max-w-[620px] rounded-xl border border-red-200 bg-red-50/95 px-3 py-2 text-center text-xs text-red-700 shadow-sm backdrop-blur dark:border-red-400/25 dark:bg-red-950/80 dark:text-red-200"
             >
               {errorMessage}
             </div>
           )}
-          <div className="mb-2 flex flex-wrap justify-center gap-1 text-xs">
-            <button
-              type="button"
-              aria-pressed={voiceMode}
-              onClick={enableVoiceMode}
-              className={`rounded-full px-3.5 py-1.5 font-medium shadow-sm backdrop-blur-xl ${
-                voiceMode
-                  ? "bg-orange-500 text-white"
-                  : "border border-white/12 bg-[#17191f]/90 text-[#b8bbc1]"
-              }`}
-            >
-              语音回答
-            </button>
-            <button
-              type="button"
-              aria-pressed={!voiceMode}
-              onClick={disableVoiceMode}
-              className={`rounded-full px-3.5 py-1.5 font-medium shadow-sm backdrop-blur-xl ${
-                !voiceMode
-                  ? "bg-orange-500 text-white"
-                  : "border border-white/12 bg-[#17191f]/90 text-[#b8bbc1]"
-              }`}
-            >
-              打字回答
-            </button>
-          </div>
-          {/* 常驻挂载：开场问题还没到时也要能在点击「语音回答」的手势里解锁播放。 */}
-          <div
-            className={
-              voiceMode ? "mb-2 flex items-center justify-center gap-3" : "hidden"
+          <UnifiedAnswerComposer
+            answerLocked={isLoading || isSubmitting || isThinking || isEnded}
+            answerText={answerText}
+            asrFinal={asrFinal}
+            isRecording={isRecording}
+            isSubmitting={isSubmitting}
+            isVoiceConnecting={isVoiceConnecting}
+            onAnswerChange={(value) => {
+              setAnswerText(value);
+              if (voiceMode) {
+                answerAtRecordingStartRef.current = value;
+                transcriptAtRecordingStartRef.current =
+                  lastTranscriptRef.current;
+                setAsrFinal(false);
+              }
+            }}
+            onAudioFrame={sendAudioFrame}
+            onBeforeVoiceStart={prepareVoiceStart}
+            onRecorderError={handleRecorderError}
+            onRecordingChange={handleRecordingChange}
+            onSilence={handleSilence}
+            onSubmit={() => void handleSubmitAnswer()}
+            onVoiceLevelChange={setVoiceLevel}
+            recorderRef={recorderRef}
+            submitDisabled={
+              isLoading ||
+              isSubmitting ||
+              isThinking ||
+              isRecording ||
+              !answerText.trim() ||
+              !runtimeToken
             }
-          >
-            <Waveform
-              level={interviewerSpeaking ? 0.78 : 0}
-              active={interviewerSpeaking}
-              label="面试官语音播放状态"
-            />
-            <TTSPlayer
-              ref={ttsPlayerRef}
-              onSpeakingChange={setInterviewerSpeaking}
-            />
-          </div>
-          {voiceNotice && voiceMode && (
-            <p role="status" aria-live="polite" className="m-0 mb-2 text-center text-xs text-amber-200/80">
-              {voiceNotice}
-            </p>
-          )}
-          <div className="flex flex-col gap-2 rounded-[20px] border border-white/12 bg-[#17191f]/92 p-3 text-[#f4f4f2] shadow-[0_24px_70px_-28px_rgba(0,0,0,.9),0_10px_34px_-18px_rgba(249,115,22,.38)] ring-1 ring-white/[0.04] backdrop-blur-xl transition-[border-color,box-shadow] focus-within:border-orange-400/70 focus-within:shadow-[0_26px_72px_-26px_rgba(0,0,0,.92),0_12px_38px_-16px_rgba(249,115,22,.5)]">
-            {voiceMode && (
-              <VoiceRecorder
-                disabled={
-                  isLoading || isSubmitting || isThinking || isEnded || connection !== "connected"
-                }
-                onAudioFrame={(frame) => {
-                  if (!voiceSocketRef.current?.sendAudio(frame)) {
-                    setErrorMessage("语音连接尚未就绪，请等待重连或切换到文字回答。");
-                  }
-                }}
-                onRecordingChange={(recording) => {
-                  setIsRecording(recording);
-                  setAsrFinal(false);
-                  if (recording) {
-                    setVoiceNotice("正在录音并实时转写…");
-                  } else {
-                    voiceSocketRef.current?.finishAudio();
-                    setVoiceNotice("正在完成本段转写…");
-                  }
-                }}
-                onSilence={() =>
-                  setVoiceNotice("暂时没有检测到声音，请靠近麦克风或检查系统输入设备。")
-                }
-                onError={(message) => {
-                  setErrorMessage(message);
-                  setVoiceNotice(null);
-                  setVoiceMode(false);
-                }}
-              />
-            )}
-            <div className="flex items-end gap-2">
-            <textarea
-              value={answerText}
-              onChange={(event) => {
-                setAnswerText(event.target.value);
-                if (voiceMode) setAsrFinal(false);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  void handleSubmitAnswer();
-                }
-              }}
-              disabled={isLoading || isSubmitting || isThinking || isEnded}
-              placeholder={
-                voiceMode
-                  ? "转写内容会显示在这里，可编辑后提交"
-                  : "输入你的回答，Shift + Enter 换行"
-              }
-              rows={2}
-              className="max-h-28 min-h-12 flex-1 resize-none border-none bg-transparent px-1.5 py-0.5 text-[14.5px] leading-6 text-[#f4f4f2] outline-none placeholder:text-[#737780] disabled:cursor-not-allowed disabled:opacity-60"
-            />
-            <button
-              type="button"
-              onClick={() => void handleSubmitAnswer()}
-              disabled={
-                isLoading ||
-                isSubmitting ||
-                 isThinking ||
-                 isRecording ||
-                 !answerText.trim() ||
-                !runtimeToken
-              }
-              className="mira-button shrink-0 rounded-[12px] bg-orange-500 px-4 py-2.5 text-sm font-medium text-white shadow-[0_8px_22px_-10px_rgba(249,115,22,.9)] disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-white/35 disabled:shadow-none"
-            >
-              提交回答
-            </button>
-            </div>
-            {voiceMode && asrFinal && (
-              <span className="text-center text-[11px] text-emerald-300">
-                已收到最终转写，检查内容后即可提交
-              </span>
-            )}
-          </div>
+            voiceLevel={voiceLevel}
+          />
           </div>
         </footer>
       </main>
@@ -1111,11 +1317,11 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
             onClick={() => setReviewOpen(false)}
             className="fixed inset-0 z-[1500] bg-[#0a0a0a]/35 backdrop-blur-[2px]"
           />
-          <aside className="animate-mira-slide-left fixed top-0 right-0 bottom-0 z-[1600] flex w-full max-w-[440px] flex-col bg-[#13151a] text-[#f4f4f2] shadow-[-20px_0_60px_-20px_rgba(0,0,0,.65)]">
-            <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
+          <aside className="animate-mira-slide-left fixed top-0 right-0 bottom-0 z-[1600] flex w-full max-w-[440px] flex-col bg-white text-[#171717] shadow-[-20px_0_60px_-24px_rgba(0,0,0,.24)] dark:bg-[#13151a] dark:text-[#f4f4f2] dark:shadow-[-20px_0_60px_-20px_rgba(0,0,0,.65)]">
+            <div className="flex items-center justify-between border-b border-black/10 px-6 py-5 dark:border-white/10">
               <div>
                 <h2 className="m-0 text-[17px] font-semibold">回看本场问答</h2>
-                <p className="m-0 mt-1 text-xs text-[#8f939b]">
+                <p className="m-0 mt-1 text-xs text-[#737373] dark:text-[#8f939b]">
                   来自服务端恢复与本轮实时消息
                 </p>
               </div>
@@ -1123,14 +1329,14 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
                 type="button"
                 aria-label="关闭"
                 onClick={() => setReviewOpen(false)}
-                className="mira-button h-9 w-9 rounded-lg border border-white/12 bg-white/[0.05]"
+                className="mira-button h-9 w-9 rounded-lg border border-black/10 bg-black/[0.03] dark:border-white/12 dark:bg-white/[0.05]"
               >
                 ×
               </button>
             </div>
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5">
               {reviewQuestions.length === 0 ? (
-                <p className="py-12 text-center text-sm text-[#8f939b]">
+                <p className="py-12 text-center text-sm text-[#737373] dark:text-[#8f939b]">
                   暂无可回看的问答
                 </p>
               ) : (
@@ -1138,20 +1344,20 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
                   <article
                     key={`review-${item.question.key}`}
                     data-testid={`review-question-${index + 1}`}
-                    className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4 shadow-[0_10px_30px_-24px_rgba(0,0,0,.65)]"
+                    className="rounded-[18px] border border-black/10 bg-[#fafafa] p-4 shadow-[0_10px_30px_-26px_rgba(0,0,0,.24)] dark:border-white/10 dark:bg-white/[0.04] dark:shadow-[0_10px_30px_-24px_rgba(0,0,0,.65)]"
                   >
                     <div className="mb-3 flex items-center gap-2 text-xs font-semibold tracking-[0.08em] text-orange-600">
                       <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
                       问题 {index + 1}
                     </div>
-                      <p className="m-0 whitespace-pre-wrap text-[14px] leading-6 font-medium text-[#ececea]">
+                      <p className="m-0 whitespace-pre-wrap text-[14px] leading-6 font-medium text-[#171717] dark:text-[#ececea]">
                       {item.question.content}
                     </p>
                     <div className="mt-4 border-l-2 border-orange-200 pl-3">
-                      <div className="mb-1 text-[11px] font-medium text-[#8f939b]">
+                      <div className="mb-1 text-[11px] font-medium text-[#737373] dark:text-[#8f939b]">
                         回答
                       </div>
-                      <p className="m-0 whitespace-pre-wrap text-[13.5px] leading-6 text-[#b8bbc1]">
+                      <p className="m-0 whitespace-pre-wrap text-[13.5px] leading-6 text-[#525252] dark:text-[#b8bbc1]">
                         {item.answer?.content ?? "尚未回答"}
                       </p>
                     </div>
@@ -1174,17 +1380,19 @@ export default function InterviewClient({ sessionId }: { sessionId: string }) {
           <div
             role="dialog"
             aria-modal="true"
-            className="animate-mira-soft-pop fixed top-1/2 left-1/2 z-[1800] w-[calc(100%-32px)] max-w-[390px] -translate-x-1/2 -translate-y-1/2 rounded-[18px] border border-red-400/20 bg-[#17191f] p-6 text-[#f4f4f2] shadow-2xl"
+            className="animate-mira-soft-pop fixed top-1/2 left-1/2 z-[1800] w-[calc(100%-32px)] max-w-[390px] -translate-x-1/2 -translate-y-1/2 rounded-[18px] border border-red-200 bg-white p-6 text-[#171717] shadow-2xl dark:border-red-400/20 dark:bg-[#17191f] dark:text-[#f4f4f2]"
           >
-            <h2 className="m-0 mb-2 text-xl font-semibold">确认结束面试？</h2>
-            <p className="m-0 mb-6 text-sm leading-6 text-[#a9adb4]">
+            <h2 className="m-0 mb-2 text-xl font-semibold">
+              确认结束面试？
+            </h2>
+            <p className="m-0 mb-6 text-sm leading-6 text-[#525252] dark:text-[#a9adb4]">
               尚未发送的输入不会被保存；结束后将进入结果页。
             </p>
             <div className="flex gap-2.5">
               <button
                 type="button"
                 onClick={() => setConfirmEndOpen(false)}
-                className="mira-button flex-1 rounded-[10px] border border-white/12 bg-white/[0.05] py-2.5 text-sm"
+                className="mira-button flex-1 rounded-[10px] border border-black/10 bg-black/[0.03] py-2.5 text-sm dark:border-white/12 dark:bg-white/[0.05]"
               >
                 继续面试
               </button>

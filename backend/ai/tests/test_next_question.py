@@ -8,6 +8,7 @@ import pytest
 
 from app.schemas.interview import GeneratedQuestion, InterviewStartRequest
 from app.schemas.outline import InterviewPhase
+from app.prompts.next_question import SYSTEM_PROMPT, build_user_prompt
 from app.services.next_question import FALLBACK_QUESTIONS, next_phase
 from app.services.session_state import InMemorySessionStateStore
 
@@ -21,12 +22,56 @@ _BUDGET = {
 }
 
 
+def test_dynamic_main_question_must_switch_away_from_an_exhausted_follow_up_topic() -> None:
+    assert "不得把新主问题包装成第四次追问" in SYSTEM_PROMPT
+    assert "切换到不同的考察方面" in SYSTEM_PROMPT
+
+
+def test_dynamic_question_must_be_answerable_without_showing_literal_code() -> None:
+    assert "不得要求候选人现场编写、粘贴或展示完整代码" in SYSTEM_PROMPT
+    assert "口头说明伪代码、关键接口、数据流或实现思路" in SYSTEM_PROMPT
+
+
+def test_dynamic_question_payload_marks_the_previous_topic_as_exhausted() -> None:
+    prompt = build_user_prompt(
+        target_phase="RESUME_DEEP_DIVE",
+        config={"jobTitle": "全栈工程师"},
+        resume={"projects": [{"name": "MiraPrep"}]},
+        asked_questions=["请介绍 LangGraph 状态机。"],
+        history=[{"role": "INTERVIEWER", "questionId": 1, "content": "追问三"}],
+        remaining_seconds=300,
+        previous_follow_up_count=3,
+    )
+
+    assert '"previousFollowUpCount": 3' in prompt
+    assert '"previousTopicExhausted": true' in prompt
+
+
 def test_next_phase_stays_in_phase_until_its_budget_is_used() -> None:
     asked = Counter({InterviewPhase.SELF_INTRO: 1, InterviewPhase.RESUME_DEEP_DIVE: 1})
 
     assert (
         next_phase(_BUDGET, asked, InterviewPhase.RESUME_DEEP_DIVE)
         is InterviewPhase.RESUME_DEEP_DIVE
+    )
+
+
+def test_next_phase_can_move_past_an_exhausted_follow_up_topic() -> None:
+    asked = Counter(
+        {
+            InterviewPhase.SELF_INTRO: 1,
+            InterviewPhase.RESUME_DEEP_DIVE: 1,
+        }
+    )
+
+    assert (
+        next_phase(
+            _BUDGET,
+            asked,
+            InterviewPhase.RESUME_DEEP_DIVE,
+            skip_current=True,
+        )
+        is InterviewPhase.DOMAIN_ASSESSMENT
     )
 
 

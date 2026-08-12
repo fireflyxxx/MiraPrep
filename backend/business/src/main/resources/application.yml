@@ -76,6 +76,18 @@ app:
       send-global-max-attempts: ${VERIFICATION_SEND_GLOBAL_MAX_ATTEMPTS:1000}
       mail-mode: ${MAIL_MODE:console}
       mail-from: ${MAIL_FROM:MiraPrep <no-reply@localhost>}
+    oauth:
+      google:
+        # 留空即关闭 Google 登录：前端不渲染按钮，后端一律拒绝（见 GoogleOAuthService）。
+        client-id: ${GOOGLE_CLIENT_ID:}
+        # 可覆盖，测试用本地桩服务顶掉真实 Google。
+        tokeninfo-base-url: ${GOOGLE_TOKENINFO_BASE_URL:https://oauth2.googleapis.com}
+      github:
+        # client-id 与前端同值；secret 只留后端。任一为空即关闭 GitHub 登录。
+        client-id: ${GITHUB_CLIENT_ID:}
+        client-secret: ${GITHUB_CLIENT_SECRET:}
+        oauth-base-url: ${GITHUB_OAUTH_BASE_URL:https://github.com}
+        api-base-url: ${GITHUB_API_BASE_URL:https://api.github.com}
     login-window: ${LOGIN_RATE_LIMIT_WINDOW:60}
     login-max-attempts: ${LOGIN_RATE_LIMIT_MAX_ATTEMPTS:5}
     token-store: ${AUTH_TOKEN_STORE:redis}

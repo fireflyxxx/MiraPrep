@@ -22,6 +22,7 @@ export interface FollowUpReview {
   question: string;
   answer: string;
   answerSeconds: number | null;
+  score: number | null;
   referenceAnswer: string;
   suggestions: string[];
 }

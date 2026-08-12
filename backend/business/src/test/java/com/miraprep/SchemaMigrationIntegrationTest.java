@@ -29,6 +29,7 @@ class SchemaMigrationIntegrationTest {
             "INTERVIEW_SESSION",
             "INTERVIEW_MESSAGE",
             "QUESTION",
+            "PRACTICE_SESSION",
             "REPORT",
             "QUESTION_REVIEW");
 
@@ -70,6 +71,7 @@ class SchemaMigrationIntegrationTest {
                 "InterviewSession",
                 "InterviewMessage",
                 "Question",
+                "PracticeSession",
                 "Report",
                 "QuestionReview");
     }

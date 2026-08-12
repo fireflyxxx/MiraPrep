@@ -110,6 +110,8 @@ public class AiServiceClient {
      */
     public record InterviewStartRequest(
             Long sessionId,
+            String mode,
+            String practiceTarget,
             String accessToken,
             int durationMin,
             String interviewerStyle,
@@ -133,5 +135,8 @@ public class AiServiceClient {
             List<String> focusPoints,
             String question,
             String answer,
+            String baselineAnswer,
+            java.math.BigDecimal baselineScore,
+            List<Map<String, Object>> baselineFollowUps,
             List<Map<String, Object>> followUps) {}
 }

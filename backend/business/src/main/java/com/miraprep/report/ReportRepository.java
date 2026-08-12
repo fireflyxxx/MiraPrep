@@ -26,6 +26,7 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
             join fetch report.session session
             where session.user.id = :userId
               and session.deleted = false
+              and session.sessionType = com.miraprep.domain.InterviewSessionType.INTERVIEW
               and report.partial = false
               and (:jobDirection is null or session.jobDirection = :jobDirection)
               and (:jobTitle is null or session.jobTitle = :jobTitle)
@@ -42,6 +43,7 @@ public interface ReportRepository extends JpaRepository<Report, Long> {
             join fetch report.session session
             where session.user.id = :userId
               and session.deleted = false
+              and session.sessionType = com.miraprep.domain.InterviewSessionType.INTERVIEW
               and report.partial = false
             order by session.endedAt desc, session.id desc
             """)

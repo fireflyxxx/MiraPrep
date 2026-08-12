@@ -17,7 +17,6 @@ import {
   type InterviewerStyle,
 } from "@/lib/api/interview";
 import { storeInterviewRuntimeToken } from "@/lib/api/interview-stream";
-import { storeInterviewVoicePreference } from "@/lib/api/interview-ws";
 import { ApiError } from "@/lib/api/types";
 import {
   difficultyOptions,
@@ -91,7 +90,6 @@ export default function InterviewSetupPage() {
   const [focus, setFocus] = useState<string[]>(["project", "system"]);
   const [notes, setNotes] = useState("");
   const [interviewerStyle, setInterviewerStyle] = useState<InterviewerStyle>("balanced");
-  const [voiceEnabled, setVoiceEnabled] = useState(false);
   const selectedResumeReady = resumeLibrary.data?.items.some(
     (resume) => resume.id === resumeId && resume.parseStatus === "success",
   ) ?? false;
@@ -147,7 +145,7 @@ export default function InterviewSetupPage() {
           durationMin: duration,
           customRequirements: buildCustomRequirements(focus, notes),
           interviewerStyle,
-          voiceEnabled,
+          voiceEnabled: false,
         };
         try {
           const created = await createInterview(input);
@@ -155,7 +153,6 @@ export default function InterviewSetupPage() {
           if (created.runtimeToken) {
             storeInterviewRuntimeToken(created.sessionId, created.runtimeToken);
           }
-          storeInterviewVoicePreference(created.sessionId, voiceEnabled);
         } catch (error) {
           if (!mounted.current || controller.signal.aborted) return;
           const status = error instanceof ApiError ? error.status : undefined;
@@ -404,28 +401,6 @@ export default function InterviewSetupPage() {
                     </span>
                   </button>
                 ))}
-              </div>
-              <div className="mb-6 flex items-center justify-between rounded-xl border border-border bg-surface p-4">
-                <div>
-                  <div className="text-[14px] font-medium">语音面试</div>
-                  <div className="mt-1 text-xs text-muted-foreground">开启后进入面试页时优先使用语音模式</div>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-label="启用语音面试"
-                  aria-checked={voiceEnabled}
-                  onClick={() => setVoiceEnabled((enabled) => !enabled)}
-                  className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
-                    voiceEnabled ? "bg-orange-500" : "bg-border"
-                  }`}
-                >
-                  <span
-                    className={`absolute top-1 left-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
-                      voiceEnabled ? "translate-x-5" : "translate-x-0"
-                    }`}
-                  />
-                </button>
               </div>
               <label htmlFor="interviewer-notes" className="mb-2.5 block text-[13px] font-medium">
                 给面试官的备注

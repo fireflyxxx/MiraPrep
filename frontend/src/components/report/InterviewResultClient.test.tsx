@@ -36,8 +36,8 @@ describe("totalSpentSeconds", () => {
         thinkSeconds: 10,
         answerSeconds: 50,
         followUpChain: [
-          { question: "f1", answer: "a1", answerSeconds: 120, referenceAnswer: "", suggestions: [] },
-          { question: "f2", answer: "a2", answerSeconds: 180, referenceAnswer: "", suggestions: [] },
+          { question: "f1", answer: "a1", answerSeconds: 120, score: 7, referenceAnswer: "", suggestions: [] },
+          { question: "f2", answer: "a2", answerSeconds: 180, score: 8, referenceAnswer: "", suggestions: [] },
         ],
       }),
       question({ questionId: 2, order: 2, answerSeconds: 40 }),
@@ -51,7 +51,7 @@ describe("totalSpentSeconds", () => {
       totalSpentSeconds([
         question({
           followUpChain: [
-            { question: "f", answer: "a", answerSeconds: null, referenceAnswer: "", suggestions: [] },
+            { question: "f", answer: "a", answerSeconds: null, score: null, referenceAnswer: "", suggestions: [] },
           ],
         }),
       ]),

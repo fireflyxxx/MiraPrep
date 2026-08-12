@@ -21,10 +21,16 @@ export const endpoints = {
   register: "/auth/register",
   refresh: "/auth/refresh",
   sendCode: "/auth/send-code",
+  googleLogin: "/auth/oauth/google",
+  githubLogin: "/auth/oauth/github",
   me: "/users/me",
   myProfile: "/users/me/profile",
   resumes: "/resumes",
   interviews: "/interviews",
+  practiceRetry: (sessionId: string, questionId: number) =>
+    `/interviews/${sessionId}/questions/${questionId}/retry`,
+  practiceResult: (practiceSessionId: string) =>
+    `/interviews/${practiceSessionId}/practice-result`,
   overviewStats: "/stats/overview",
   report: (sessionId: string) => `/reports/${sessionId}`,
   reportStatus: (sessionId: string) => `/reports/${sessionId}/status`,

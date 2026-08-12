@@ -308,6 +308,15 @@ class GradingService:
         normalized_reviews: list[QuestionReview] = []
         for review in reviews:
             transcript = transcript_by_id[review.questionId]
+            if (transcript.baselineAnswer is None) != (review.baselineScore is None):
+                raise ValueError("llm baseline score does not match transcript")
+            if (transcript.baselineAnswer is None) != (review.comparison is None):
+                raise ValueError("llm comparison does not match transcript")
+            if (
+                transcript.baselineScore is not None
+                and review.baselineScore != transcript.baselineScore
+            ):
+                raise ValueError("llm changed the provided baseline score")
             if len(review.followUpChain) != len(transcript.followUps):
                 raise ValueError("llm follow-up reviews do not match transcript")
             normalized_follow_ups: list[FollowUpReview] = []
@@ -319,6 +328,7 @@ class GradingService:
                         question=str(source.get("question", "")).strip(),
                         answer=str(source.get("answer", "")).strip(),
                         answerSeconds=source.get("answerSeconds"),
+                        score=generated.score,
                         referenceAnswer=generated.referenceAnswer.strip(),
                         suggestions=list(generated.suggestions),
                     )

@@ -1,5 +1,6 @@
 """T-112/T-113 bidirectional interview voice WebSocket."""
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, WebSocket
@@ -14,6 +15,7 @@ from app.services.interview_agent import (
     BusinessMessageSink,
     BusinessQuestionSink,
     InterviewAgentService,
+    RuntimeAuthorizationError,
 )
 from app.services.interview_ws import VoiceInterviewRuntime
 from app.services.asr.base import SpeechProviderConfigurationError
@@ -21,6 +23,7 @@ from app.services.session_state import RedisSessionStateStore, get_interview_che
 from app.services.speech import build_asr_provider, build_tts_provider
 
 router = APIRouter(tags=["interview-runtime"])
+logger = logging.getLogger("miraprep.ai.interview_ws")
 SessionId = Annotated[int, Path(gt=0)]
 
 
@@ -59,10 +62,13 @@ async def interview_voice_websocket(
         )
     except SpeechProviderConfigurationError:
         await _close(websocket, 1013, "speech provider is not configured")
-    except Exception:
-        # The runtime emits protocol-level errors after acceptance. Pre-accept auth,
-        # replay, and provider failures use an application close code.
+    except RuntimeAuthorizationError:
         await _close(websocket, 4403, "interview voice session rejected")
+    except Exception:
+        # 运行时/提供商/Redis 故障不是鉴权失败。1011 会让已建立连接的前端走重连，
+        # 同时避免把内部异常原因泄漏到浏览器。
+        logger.exception("interview voice runtime failed", extra={"session_id": session_id})
+        await _close(websocket, 1011, "interview voice runtime failed")
 
 
 async def _close(websocket: WebSocket, code: int, reason: str) -> None:

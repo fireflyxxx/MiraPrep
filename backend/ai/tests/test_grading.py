@@ -18,7 +18,6 @@ from app.prompts.grading import GRADING_SYSTEM_PROMPT, SUMMARY_SYSTEM_PROMPT, bu
 from app.routers.internal import get_grading_task_queue
 from app.schemas.grading import (
     DimensionScores,
-    FollowUpReview,
     GradingReport,
     GradingRequest,
     QuestionReview,
@@ -30,6 +29,11 @@ from app.services.grading import (
     aggregate_scores,
     grade_for_score,
 )
+
+
+def test_grading_does_not_penalize_missing_literal_code_in_a_spoken_interview() -> None:
+    assert "不得因候选人没有现场提供完整、可运行的代码而扣分" in GRADING_SYSTEM_PROMPT
+    assert "不得把未展示完整代码写成提升方向" in SUMMARY_SYSTEM_PROMPT
 
 
 def _request_data(*, partial: bool = False, session_id: int = 105) -> dict[str, Any]:
@@ -67,6 +71,7 @@ def _request_data(*, partial: bool = False, session_id: int = 105) -> dict[str, 
                         "question": "如何避免重复？",
                         "answer": "使用稳定幂等键。",
                         "answerSeconds": 18,
+                        "score": 7,
                     }
                 ],
             },
@@ -83,26 +88,44 @@ def _request_data(*, partial: bool = False, session_id: int = 105) -> dict[str, 
     }
 
 
-def _question_review(question_id: int, score: int) -> QuestionReview:
-    return QuestionReview(
-        questionId=question_id,
-        score=score,
-        referenceAnswer=f"在 MiraPrep 项目中使用 Redis 可靠队列，题号 {question_id}。",
-        suggestions=["先说目标，再说明设计与取舍。"],
-        followUpChain=(
+def _question_review(
+    question_id: int,
+    score: int,
+    *,
+    baseline_score: int | None = None,
+    comparison: dict[str, Any] | None = None,
+) -> QuestionReview:
+    payload: dict[str, Any] = {
+        "questionId": question_id,
+        "score": score,
+        "baselineScore": baseline_score,
+        "referenceAnswer": f"在 MiraPrep 项目中使用 Redis 可靠队列，题号 {question_id}。",
+        "suggestions": ["先说目标，再说明设计与取舍。"],
+        "followUpChain": (
             [
-                FollowUpReview(
-                    question="如何避免重复？",
-                    answer="使用稳定幂等键。",
-                    answerSeconds=18,
-                    referenceAnswer="使用业务幂等键、唯一约束和可重试状态机共同兜底。",
-                    suggestions=["说明幂等键的生成规则与冲突处理。"],
-                )
+                {
+                    "question": "如何避免重复？",
+                    "answer": "使用稳定幂等键。",
+                    "answerSeconds": 18,
+                    "score": 7,
+                    "referenceAnswer": "使用业务幂等键、唯一约束和可重试状态机共同兜底。",
+                    "suggestions": ["说明幂等键的生成规则与冲突处理。"],
+                }
             ]
             if question_id == 1
             else []
         ),
-    )
+    }
+    if comparison is not None:
+        payload["comparison"] = comparison
+    return QuestionReview.model_validate(payload)
+
+
+def test_grading_prompts_do_not_treat_asr_artifacts_as_speaking_defects() -> None:
+    for prompt in (GRADING_SYSTEM_PROMPT, SUMMARY_SYSTEM_PROMPT):
+        assert "ASR" in prompt
+        assert "不得据此判断候选人存在口误、吞字、语速或发音问题" in prompt
+        assert "不得因此扣分" in prompt
 
 
 class RecordingLlm:
@@ -131,7 +154,22 @@ class RecordingLlm:
                     )[0]
                 )
                 result = _question_review(
-                    data["question"]["questionId"], self.question_scores[index]
+                    data["question"]["questionId"],
+                    self.question_scores[index],
+                    baseline_score=(
+                        data["question"].get("baselineScore")
+                        if data["question"].get("baselineScore") is not None
+                        else 6 if data["question"].get("baselineAnswer") is not None else None
+                    ),
+                    comparison=(
+                        {
+                            "improvements": ["补充了幂等键与唯一约束"],
+                            "remainingGaps": ["缺少量化效果"],
+                            "scoreRationale": "关键机制更完整，因此由 5 分提升至 8 分。",
+                        }
+                        if data["question"].get("baselineAnswer") is not None
+                        else None
+                    ),
                 )
                 if self.reference_answers:
                     result = result.model_copy(
@@ -382,6 +420,7 @@ async def test_service_builds_complete_resume_specific_report_and_partial_branch
     assert len(report.questionReviews) == 2
     assert all("MiraPrep" in review.referenceAnswer for review in report.questionReviews)
     follow_up = report.questionReviews[0].followUpChain[0]
+    assert follow_up.score == 7
     assert follow_up.question == "如何避免重复？"
     assert follow_up.answer == "使用稳定幂等键。"
     assert follow_up.answerSeconds == 18
@@ -391,6 +430,43 @@ async def test_service_builds_complete_resume_specific_report_and_partial_branch
     assert len(llm.summary_prompts) == 1
     await service.aclose()
     assert llm.closed is True
+
+
+@pytest.mark.asyncio
+async def test_service_returns_an_independent_baseline_score_for_legacy_follow_up_retry() -> None:
+    data = _request_data()
+    data["transcript"] = [data["transcript"][0]]
+    data["transcript"][0]["baselineAnswer"] = "旧追问回答只有快照，没有历史分数。"
+    request = GradingRequest.model_validate(data)
+    service = GradingService(RecordingLlm(question_scores=[8]))
+
+    report = await service.grade(request)
+
+    assert report.questionReviews[0].baselineScore == 6
+
+
+@pytest.mark.asyncio
+async def test_service_returns_score_comparison_for_practice_answer() -> None:
+    data = _request_data()
+    data["transcript"] = [data["transcript"][0]]
+    data["transcript"][0]["baselineAnswer"] = "旧回答只提到了失败重试。"
+    data["transcript"][0]["baselineScore"] = 5.5
+    data["transcript"][0]["baselineFollowUps"] = [
+        {"question": "旧追问", "answer": "旧追问补充了失败队列。", "score": 6}
+    ]
+    request = GradingRequest.model_validate(data)
+    llm = RecordingLlm(question_scores=[8])
+    service = GradingService(llm)
+
+    report = await service.grade(request)
+
+    review = report.questionReviews[0]
+    assert review.baselineScore == 5.5
+    assert review.comparison is not None
+    assert review.comparison.improvements == ["补充了幂等键与唯一约束"]
+    assert review.comparison.remainingGaps == ["缺少量化效果"]
+    assert review.comparison.scoreRationale == "关键机制更完整，因此由 5 分提升至 8 分。"
+    assert "旧追问补充了失败队列" in llm.question_prompts[0]
 
 
 @pytest.mark.asyncio
@@ -489,6 +565,7 @@ async def test_service_falls_back_to_plain_json_when_provider_returns_empty_tool
                         "question": "如何避免重复？",
                         "answer": "使用稳定幂等键。",
                         "answerSeconds": 18,
+                        "score": 7,
                         "referenceAnswer": "使用幂等键和唯一约束。",
                         "suggestions": ["说明冲突处理。"],
                     }

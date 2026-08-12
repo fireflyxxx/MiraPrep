@@ -19,4 +19,22 @@ describe("TTSPlayer", () => {
       screen.getByRole("button", { name: "静音面试官语音" }),
     ).toHaveAttribute("aria-pressed", "false");
   });
+
+  it("uses practice-specific speech labels outside the formal interview", () => {
+    render(
+      <TTSPlayer
+        labels={{
+          mute: "关闭题目语音",
+          unmute: "开启题目语音",
+          idle: "题目语音开启",
+          muted: "题目已静音",
+          speaking: "题目播放中",
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "关闭题目语音" }),
+    ).toHaveTextContent("题目语音开启");
+  });
 });

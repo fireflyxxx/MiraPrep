@@ -74,6 +74,9 @@ class AiServiceClientContractTest {
                         List.of("事务"),
                         "如何保证回调幂等？",
                         "使用行锁和唯一约束。",
+                        "只做了失败重试。",
+                        java.math.BigDecimal.valueOf(7),
+                        List.of(),
                         List.of(Map.of(
                                 "question", "如果并发到达呢？",
                                 "answer", "仍由数据库约束兜底。")))),
@@ -88,6 +91,8 @@ class AiServiceClientContractTest {
         assertThat(body.path("transcript").get(0).path("questionId").asLong()).isEqualTo(11L);
         assertThat(body.path("transcript").get(0).path("answer").asText())
                 .isEqualTo("使用行锁和唯一约束。");
+        assertThat(body.path("transcript").get(0).path("baselineScore").asInt())
+                .isEqualTo(7);
         assertThat(body.path("transcript").get(0).path("followUps").get(0).path("question").asText())
                 .isEqualTo("如果并发到达呢？");
         assertThat(body.path("partial").asBoolean()).isTrue();

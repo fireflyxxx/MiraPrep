@@ -110,7 +110,7 @@ describe("streamVoiceInterview", () => {
     vi.unstubAllGlobals();
   });
 
-  it("numbers audio frames consecutively and resumes the cursor on a new socket", () => {
+  it("numbers frames consecutively but resumes only from the server-acknowledged cursor", () => {
     const first = connect();
     first.socket.sendAudio(new Uint8Array([1, 2]));
     first.socket.sendAudio(new Uint8Array([3, 4]));
@@ -118,10 +118,27 @@ describe("streamVoiceInterview", () => {
     expect(first.transport.frames[0].payload.format).toBe("pcm16/16k");
     first.transport.close(1000);
 
-    // 重连后必须接着上一条帧的序号，否则服务端会判成序号断层并丢掉这一段录音。
+    // 未收到 ack 的帧可能仍滞留在浏览器缓冲区，重连后宁可重发并让服务端去重，
+    // 也不能从一个服务端尚未接受的序号继续。
     const second = connect(9);
     second.socket.sendAudio(new Uint8Array([5, 6]));
-    expect(second.transport.frames[0].payload.audioSeq).toBe(3);
+    expect(second.transport.frames[0].payload.audioSeq).toBe(1);
+  });
+
+  it("persists an acknowledged audio cursor across sockets", () => {
+    const first = connect();
+    first.socket.sendAudio(new Uint8Array([1]));
+    first.transport.deliver({
+      type: "asr_partial",
+      payload: { text: "", isFinal: false, acceptedAudioSeq: 1 },
+      seq: 2,
+    });
+    first.transport.close(1000);
+
+    const second = connect(2);
+    second.socket.sendAudio(new Uint8Array([2]));
+
+    expect(second.transport.frames[0].payload.audioSeq).toBe(2);
   });
 
   it("rewinds the cursor to the gap the server reports so the next frame refills it", () => {

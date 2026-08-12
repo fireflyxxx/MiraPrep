@@ -220,6 +220,18 @@ class AuthApiIntegrationTest {
     }
 
     @Test
+    void registrationAcceptsEightCharacterPasswordWithLettersAndNumbers() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType("application/json")
+                        .content("""
+                                {"email":"%s","password":"pass1234",
+                                 "nickname":"Learner","code":"123456"}
+                                """.formatted(uniqueEmail())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+    }
+
+    @Test
     void apiResponsesIncludeBaselineSecurityHeaders() throws Exception {
         mockMvc.perform(get("/api/v1/health"))
                 .andExpect(status().isOk())

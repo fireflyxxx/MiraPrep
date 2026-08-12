@@ -10,6 +10,7 @@ import com.miraprep.domain.InterviewDifficulty;
 import com.miraprep.domain.InterviewMessage;
 import com.miraprep.domain.InterviewPhase;
 import com.miraprep.domain.InterviewSession;
+import com.miraprep.domain.InterviewSessionType;
 import com.miraprep.domain.InterviewStatus;
 import com.miraprep.domain.InterviewerStyle;
 import com.miraprep.domain.MessageRole;
@@ -30,6 +31,7 @@ import com.miraprep.interview.dto.OutlineQuestionRequest;
 import com.miraprep.interview.dto.RuntimeGradingRequest;
 import com.miraprep.resume.ResumeRepository;
 import com.miraprep.report.ReportRepository;
+import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
@@ -63,6 +65,7 @@ public class InterviewService {
     private final InterviewMessageRepository interviewMessageRepository;
     private final ResumeRepository resumeRepository;
     private final ReportRepository reportRepository;
+    private final PracticeSessionRepository practiceSessionRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final AuthTokenStore runtimeTokenStore;
     private final RequestRateLimiter rateLimiter;
@@ -75,6 +78,7 @@ public class InterviewService {
             InterviewMessageRepository interviewMessageRepository,
             ResumeRepository resumeRepository,
             ReportRepository reportRepository,
+            PracticeSessionRepository practiceSessionRepository,
             ApplicationEventPublisher eventPublisher,
             AuthTokenStore runtimeTokenStore,
             RequestRateLimiter rateLimiter,
@@ -85,6 +89,7 @@ public class InterviewService {
         this.interviewMessageRepository = interviewMessageRepository;
         this.resumeRepository = resumeRepository;
         this.reportRepository = reportRepository;
+        this.practiceSessionRepository = practiceSessionRepository;
         this.eventPublisher = eventPublisher;
         this.runtimeTokenStore = runtimeTokenStore;
         this.rateLimiter = rateLimiter;
@@ -137,11 +142,7 @@ public class InterviewService {
         eventPublisher.publishEvent(new InterviewOutlineRequestedEvent(outlineRequest));
 
         // 令牌在创建时就铸好交给前端，大纲就绪后才交接给运行时，两边必须是同一个值。
-        String runtimeToken = newRuntimeToken();
-        runtimeTokenStore.put(
-                runtimeTokenKey(saved.getId()),
-                runtimeToken,
-                Duration.ofMinutes(saved.getDurationMin()).plus(RUNTIME_TOKEN_SLACK));
+        String runtimeToken = issueRuntimeToken(saved);
         return new CreateInterviewResponse(
                 saved.getId(), lower(saved.getOutlineStatus()), runtimeToken);
     }
@@ -154,6 +155,16 @@ public class InterviewService {
         byte[] material = new byte[32];
         RUNTIME_TOKEN_RANDOM.nextBytes(material);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(material);
+    }
+
+    /** 为同一业务边界内的正式面试或单题练习铸造运行时令牌。 */
+    String issueRuntimeToken(InterviewSession session) {
+        String runtimeToken = newRuntimeToken();
+        runtimeTokenStore.put(
+                runtimeTokenKey(session.getId()),
+                runtimeToken,
+                Duration.ofMinutes(session.getDurationMin()).plus(RUNTIME_TOKEN_SLACK));
+        return runtimeToken;
     }
 
     @Transactional(readOnly = true)
@@ -206,7 +217,7 @@ public class InterviewService {
 
         InterviewStatus runtimeStatus = switch (request.reason().trim().toLowerCase(Locale.ROOT)) {
             case "manual", "inappropriate_content" -> InterviewStatus.ABORTED;
-            case "timeout", "completed" -> InterviewStatus.COMPLETED;
+            case "timeout", "completed", "practice_completed" -> InterviewStatus.COMPLETED;
             default -> throw new BusinessException(ErrorCode.INVALID_PARAM);
         };
         if (session.getStatus() != InterviewStatus.ABORTED) {
@@ -224,10 +235,14 @@ public class InterviewService {
                 page - 1, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         Page<InterviewSession> sessions;
         if (status == null || status.isBlank()) {
-            sessions = interviewSessionRepository.findByUserIdAndDeletedFalse(userId, pageable);
+            sessions = interviewSessionRepository.findByUserIdAndDeletedFalseAndSessionType(
+                    userId, InterviewSessionType.INTERVIEW, pageable);
         } else {
-            sessions = interviewSessionRepository.findByUserIdAndDeletedFalseAndStatus(
-                    userId, enumValue(com.miraprep.domain.InterviewStatus.class, status), pageable);
+            sessions = interviewSessionRepository.findByUserIdAndDeletedFalseAndSessionTypeAndStatus(
+                    userId,
+                    InterviewSessionType.INTERVIEW,
+                    enumValue(com.miraprep.domain.InterviewStatus.class, status),
+                    pageable);
         }
 
         List<Long> sessionIds = sessions.getContent().stream().map(InterviewSession::getId).toList();
@@ -284,14 +299,15 @@ public class InterviewService {
         }
         List<Question> saved = questionRepository.saveAll(questions);
         session.setOutlineStatus(OutlineStatus.READY);
-        publishRuntimeStart(session, saved);
+        publishRuntimeStart(session, saved, "interview", null);
     }
 
     /**
      * 把创建时铸好的会话令牌与出题上下文交接给运行时。令牌缺失（过期或服务重启前创建）
      * 时只记日志：会话仍是 READY，用户重新创建一场即可，不该让回调失败。
      */
-    private void publishRuntimeStart(InterviewSession session, List<Question> questions) {
+    void publishRuntimeStart(
+            InterviewSession session, List<Question> questions, String mode, String practiceTarget) {
         String runtimeToken = runtimeTokenStore.get(runtimeTokenKey(session.getId()));
         if (runtimeToken == null) {
             LOGGER.warn(
@@ -312,6 +328,8 @@ public class InterviewService {
         eventPublisher.publishEvent(new InterviewRuntimeStartRequestedEvent(
                 new AiServiceClient.InterviewStartRequest(
                         session.getId(),
+                        mode,
+                        practiceTarget,
                         runtimeToken,
                         session.getDurationMin(),
                         lower(session.getInterviewerStyle()),
@@ -409,6 +427,16 @@ public class InterviewService {
         }
 
         List<AiServiceClient.InterviewGradeTranscriptQuestion> transcript = new ArrayList<>();
+        com.miraprep.domain.PracticeSession practiceMetadata =
+                practiceSessionRepository.findById(session.getId()).orElse(null);
+        String baselineAnswer =
+                practiceMetadata == null ? null : practiceMetadata.getSourceAnswer();
+        BigDecimal baselineScore =
+                practiceMetadata == null ? null : practiceMetadata.getSourceScore();
+        List<Map<String, Object>> baselineFollowUps =
+                practiceMetadata == null || practiceMetadata.getSourceFollowUps() == null
+                        ? List.of()
+                        : List.copyOf(practiceMetadata.getSourceFollowUps());
         for (Question question : questions) {
             List<InterviewMessage> messages =
                     messagesByQuestion.getOrDefault(question.getId(), List.of());
@@ -432,6 +460,9 @@ public class InterviewService {
                     question.getFocusPoints() == null ? List.of() : question.getFocusPoints(),
                     question.getText(),
                     primaryAnswer.getContent(),
+                    baselineAnswer,
+                    baselineScore,
+                    baselineFollowUps,
                     followUps(messages, primaryAnswer.getSeq())));
         }
         questionRepository.saveAll(questions);

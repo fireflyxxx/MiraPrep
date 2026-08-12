@@ -89,6 +89,11 @@ $springEnvironment = @{
     OSS_SECRET_KEY = $infraEnv["MINIO_ROOT_PASSWORD"]
     AI_SERVICE_BASE_URL = "http://127.0.0.1:8000"
     AI_INTERNAL_TOKEN = $internalToken
+    # 第三方登录（T-120）：infra/.env 里没配就是空串，等于关闭这两条登录路径。
+    # 前端的 client id 另配在 frontend/.env.local，两边必须同值。
+    GOOGLE_CLIENT_ID = $infraEnv["GOOGLE_CLIENT_ID"]
+    GITHUB_CLIENT_ID = $infraEnv["GITHUB_CLIENT_ID"]
+    GITHUB_CLIENT_SECRET = $infraEnv["GITHUB_CLIENT_SECRET"]
 }
 $aiEnvironment = @{
     INTERNAL_TOKEN = $internalToken

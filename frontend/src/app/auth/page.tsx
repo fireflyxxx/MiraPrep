@@ -1,27 +1,49 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Script from "next/script";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { z } from "zod";
 import Logo from "@/components/Logo";
-import { login, register, sendVerificationCode } from "@/lib/api/auth";
+import { login, loginWithGoogle, register, sendVerificationCode } from "@/lib/api/auth";
+import type { AuthResponse } from "@/lib/api/auth";
 import { setAuthTokens } from "@/lib/api/auth-token";
+import { githubClientId, startGitHubLogin } from "@/lib/api/github-oauth";
 import { ApiError } from "@/lib/api/types";
+
+/** Google Identity Services 注入的全局对象，只声明本页用到的两个方法。 */
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize(config: {
+            client_id: string;
+            callback: (response: { credential: string }) => void;
+          }): void;
+          renderButton(parent: HTMLElement, options: Record<string, unknown>): void;
+        };
+      };
+    };
+  }
+}
 
 const loginSchema = z.object({
   email: z.string().trim().email("请输入正确的邮箱地址"),
   password: z.string().min(8, "密码至少需要 8 位").max(128, "密码不能超过 128 位"),
 });
 
+const registerPasswordMessage = "密码至少 8 位，且必须同时包含字母和数字";
+
 const registerSchema = loginSchema.extend({
   password: z
     .string()
-    .min(12, "密码至少 12 位，且必须同时包含字母和数字")
+    .min(8, registerPasswordMessage)
     .max(128, "密码不能超过 128 位")
-    .regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, "密码至少 12 位，且必须同时包含字母和数字"),
+    .regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, registerPasswordMessage),
   nickname: z.string().trim().min(1, "请输入昵称").max(100, "昵称不能超过 100 个字符"),
   code: z.string().length(6, "请输入 6 位验证码"),
 });
@@ -46,8 +68,8 @@ function messageFor(error: Error): string {
 
 function passwordStrength(password: string): string {
   if (!password) return "";
-  if (password.length < 12 || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
-    return "密码至少 12 位，且必须同时包含字母和数字";
+  if (password.length < 8 || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+    return registerPasswordMessage;
   }
   if (/[A-Z]/.test(password) && /[0-9]/.test(password) && /[^A-Za-z0-9]/.test(password)) {
     return "密码强度：强";
@@ -63,14 +85,30 @@ export default function AuthPage() {
   const [code, setCode] = useState("");
   const [errors, setErrors] = useState<FormErrors>({});
   const [secondsLeft, setSecondsLeft] = useState(0);
+  const googleButtonRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const isRegister = tab === "register";
+  /** 没配 client id 就不渲染对应按钮，避免留一个点不动的死按钮。 */
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+  const githubEnabled = Boolean(githubClientId());
 
   useEffect(() => {
     if (secondsLeft <= 0) return;
     const timer = window.setTimeout(() => setSecondsLeft((seconds) => seconds - 1), 1000);
     return () => window.clearTimeout(timer);
   }, [secondsLeft]);
+
+  /** 登录态落地：邮箱密码与 Google 登录拿到的是同一种响应，分流规则也一样。 */
+  const enterApp = useCallback(
+    (result: AuthResponse, message: string) => {
+      setAuthTokens(result);
+      toast.success(message);
+      router.push(result.user.isFirstLogin ? "/onboarding" : "/dashboard", {
+        transitionTypes: result.user.isFirstLogin ? ["nav-modal-in"] : ["nav-forward"],
+      });
+    },
+    [router],
+  );
 
   const authMutation = useMutation({
     mutationFn: async () => {
@@ -101,13 +139,7 @@ export default function AuthPage() {
       }
       return login(parsed.data);
     },
-    onSuccess: (result) => {
-      setAuthTokens(result);
-      toast.success(isRegister ? "账号创建成功" : "登录成功");
-      router.push(result.user.isFirstLogin ? "/onboarding" : "/dashboard", {
-        transitionTypes: result.user.isFirstLogin ? ["nav-modal-in"] : ["nav-forward"],
-      });
-    },
+    onSuccess: (result) => enterApp(result, isRegister ? "账号创建成功" : "登录成功"),
     onError: (error) => {
       if (error.message === "FORM_INVALID") return;
       const message = messageFor(error);
@@ -119,6 +151,33 @@ export default function AuthPage() {
       toast.error(message);
     },
   });
+
+  const googleMutation = useMutation({
+    mutationFn: (idToken: string) => loginWithGoogle(idToken),
+    onSuccess: (result) => enterApp(result, "登录成功"),
+    onError: () => toast.error("Google 登录失败，请重试"),
+  });
+
+  /** GIS 脚本就绪后再初始化：它的按钮由 Google 自己渲染进这个容器。 */
+  const mutateGoogle = googleMutation.mutate;
+  const renderGoogleButton = useCallback(() => {
+    const identity = window.google?.accounts.id;
+    if (!googleClientId || !identity || !googleButtonRef.current) return;
+    identity.initialize({
+      client_id: googleClientId,
+      callback: (response) => mutateGoogle(response.credential),
+    });
+    // ponytail: GIS 按钮宽度是固定像素，300 是能塞进最窄手机屏的保守值；
+    // 想完全自适应得自己画按钮再调 prompt()，那条路要处理 FedCM 与静默失败。
+    identity.renderButton(googleButtonRef.current, {
+      theme: "outline",
+      size: "large",
+      shape: "rectangular",
+      text: "continue_with",
+      locale: "zh_CN",
+      width: 300,
+    });
+  }, [googleClientId, mutateGoogle]);
 
   const sendCodeMutation = useMutation({
     mutationFn: () => sendVerificationCode(email),
@@ -199,11 +258,33 @@ export default function AuthPage() {
           </button>
         </form>
 
-        <div className="mb-4 flex items-center gap-3 text-[12.5px] text-[#a3a3a3]"><span className="h-px flex-1 bg-[#eee]" />或<span className="h-px flex-1 bg-[#eee]" /></div>
-        <div className="flex gap-2.5">
-          <button type="button" className="mira-button flex-1 rounded-[10px] border border-[#e5e5e5] bg-white py-[11px] text-[13.5px]">微信登录</button>
-          <button type="button" className="mira-button flex-1 rounded-[10px] border border-[#e5e5e5] bg-white py-[11px] text-[13.5px]">GitHub</button>
-        </div>
+        {/* 一个第三方登录都没配时，连「或」分隔线都不该出现，否则下面是一片空白。 */}
+        {(googleClientId || githubEnabled) && (
+          <div className="mb-4 flex items-center gap-3 text-[12.5px] text-[#a3a3a3]"><span className="h-px flex-1 bg-[#eee]" />或<span className="h-px flex-1 bg-[#eee]" /></div>
+        )}
+        {googleClientId && (
+          <>
+            <Script src="https://accounts.google.com/gsi/client" onReady={renderGoogleButton} />
+            <div className="mb-2.5 flex justify-center">
+              <div ref={googleButtonRef} data-testid="google-signin" />
+            </div>
+            {googleMutation.isPending && (
+              <p className="mb-2.5 text-center text-xs text-[#737373]">正在用 Google 账号登录…</p>
+            )}
+          </>
+        )}
+        {githubEnabled && (
+          <button
+            type="button"
+            onClick={startGitHubLogin}
+            className="mira-button flex w-full items-center justify-center gap-2 rounded-[10px] border border-[#e5e5e5] bg-white py-[11px] text-[13.5px]"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true" className="h-4 w-4 fill-current">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+            </svg>
+            使用 GitHub 继续
+          </button>
+        )}
       </div>
 
       <div className="text-center text-[12.5px] text-[#a3a3a3]">登录即代表同意 Mira 的服务条款与隐私政策</div>

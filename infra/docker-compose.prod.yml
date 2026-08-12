@@ -125,6 +125,10 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env.prod}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-900}
       JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-1209600}
+      # 与前端 build arg 同一个值；留空即整站关闭 Google 登录（T-120）。
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       OSS_ENDPOINT: http://minio:9000
       OSS_BUCKET: ${MINIO_BUCKET:-miraprep}
       OSS_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env.prod}
@@ -166,6 +170,8 @@ services:
       args:
         NEXT_PUBLIC_API_BASE_URL: https://${DOMAIN:?set DOMAIN in .env.prod}/api/v1
         NEXT_PUBLIC_AI_STREAM_URL: https://${DOMAIN:?set DOMAIN in .env.prod}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+        NEXT_PUBLIC_GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
     restart: unless-stopped
     depends_on:
       business:

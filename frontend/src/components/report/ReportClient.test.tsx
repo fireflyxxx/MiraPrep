@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { InterviewReport } from "@/lib/api/report";
@@ -74,6 +74,7 @@ const report: InterviewReport = {
           question: "什么时候主动失效？",
           answer: "mutation 成功以后。",
           answerSeconds: 18,
+          score: 7,
           referenceAnswer: "在 mutation 成功后按 queryKey 精确失效。",
           suggestions: ["补充乐观更新失败时的回滚策略"],
         },
@@ -187,6 +188,64 @@ describe("ReportClient", () => {
     expect(screen.getByText("项目追问 4")).toBeInTheDocument();
   });
 
+  it("offers main-question and follow-up retry actions on the private report", async () => {
+    renderReport();
+
+    expect(await screen.findAllByRole("button", { name: "重练主问题" })).toHaveLength(3);
+    expect(screen.getByRole("button", { name: "重练此追问" })).toBeInTheDocument();
+  });
+
+  it("starts exactly one practice request from the retry click", async () => {
+    const baseFetch = reportFetch();
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/interviews/108/questions/1/retry") && init?.method === "POST") {
+        return new Promise<Response>(() => {});
+      }
+      return baseFetch(input);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderReport();
+
+    const retryButtons = await screen.findAllByRole("button", { name: "重练主问题" });
+    await user.click(retryButtons[0]);
+
+    expect(await screen.findByText("正在准备单题练习")).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.filter(([, init]) => init?.method === "POST"),
+    ).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8080/api/v1/interviews/108/questions/1/retry",
+      expect.objectContaining({
+        body: JSON.stringify({ targetType: "MAIN_QUESTION" }),
+      }),
+    );
+  });
+
+  it("starts a no-follow-up retry for the selected historical follow-up", async () => {
+    const baseFetch = reportFetch();
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/interviews/108/questions/1/retry") && init?.method === "POST") {
+        return new Promise<Response>(() => {});
+      }
+      return baseFetch(input);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderReport();
+
+    await user.click(await screen.findByRole("button", { name: "重练此追问" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:8080/api/v1/interviews/108/questions/1/retry",
+      expect.objectContaining({
+        body: JSON.stringify({ targetType: "FOLLOW_UP", followUpIndex: 0 }),
+      }),
+    );
+  });
+
   it("keeps a stable skeleton while the report is loading", () => {
     vi.mocked(fetch).mockReturnValue(new Promise(() => {}));
 
@@ -273,44 +332,37 @@ describe("ReportClient", () => {
     expect(screen.getAllByText("未作答")).not.toHaveLength(0);
     expect(screen.getByText("本题未作答")).toBeInTheDocument();
     expect(screen.queryByText(/用时 未记录/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "重练主问题" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("exports the report as a pdf and shows a loading state while it renders", async () => {
-    let release: (value: Response) => void = () => {};
-    const pending = new Promise<Response>((resolve) => {
-      release = resolve;
-    });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.endsWith("/export")) return pending;
-        if (url.endsWith("/share")) {
-          return envelope({ enabled: false, shareToken: null, shareUrl: null });
-        }
-        if (url.includes("/stats/history")) return envelope({ points: [] });
-        return url.endsWith("/status") ? statusResponse() : response();
-      }),
-    );
-    const createObjectURL = vi.fn(() => "blob:report");
-    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
-    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  it("prints the same report body and keeps every question in the pdf DOM", async () => {
+    const fetchMock = reportFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const print = vi.spyOn(window, "print").mockImplementation(() => {});
 
     renderReport();
     const button = await screen.findByRole("button", { name: "导出 PDF" });
+    expect(screen.queryByText("项目追问 4")).not.toBeInTheDocument();
+
+    fireEvent(window, new Event("beforeprint"));
+    const fourthQuestion = screen.getByText("项目追问 4");
+    expect(fourthQuestion.closest("[data-report-question]")).toHaveClass(
+      "report-question-print-block",
+    );
+    expect(fourthQuestion.closest("[data-report-question]")?.parentElement).toHaveClass(
+      "report-question-list",
+    );
+    fireEvent(window, new Event("afterprint"));
+    expect(screen.queryByText("项目追问 4")).not.toBeInTheDocument();
+
     await userEvent.click(button);
 
-    expect(await screen.findByRole("button", { name: "导出中…" })).toBeDisabled();
-
-    release(
-      new Response(new Blob(["%PDF-1.4"]), {
-        status: 200,
-        headers: { "Content-Type": "application/pdf" },
-      }),
-    );
-
-    expect(await screen.findByRole("button", { name: "导出 PDF" })).toBeEnabled();
-    expect(click).toHaveBeenCalledTimes(1);
-    click.mockRestore();
+    expect(print).toHaveBeenCalledTimes(1);
+    expect(
+      fetchMock.mock.calls.some(([input]) => String(input).endsWith("/export")),
+    ).toBe(false);
+    print.mockRestore();
   });
 });

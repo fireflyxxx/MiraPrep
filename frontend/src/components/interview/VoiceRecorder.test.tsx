@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import VoiceRecorder from "./VoiceRecorder";
 import { resampleToPcm16 } from "./VoiceRecorder";
@@ -50,6 +51,35 @@ describe("VoiceRecorder PCM conversion", () => {
     await waitFor(() =>
       expect(onError).toHaveBeenCalledWith(expect.stringContaining("麦克风权限")),
     );
+  });
+
+  it("waits for voice transport preflight before requesting microphone access", async () => {
+    const user = userEvent.setup();
+    const getUserMedia = vi.fn();
+    const onBeforeStart = vi.fn().mockResolvedValue(false);
+    vi.stubGlobal("AudioContext", class {});
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia },
+    });
+
+    render(
+      <VoiceRecorder
+        labels={{ idle: "语音输入", recording: "停止并转写" }}
+        onBeforeStart={onBeforeStart}
+        onAudioFrame={vi.fn()}
+        onRecordingChange={vi.fn()}
+        onError={vi.fn()}
+        onSilence={vi.fn()}
+        showWaveform={false}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "语音输入" }));
+
+    expect(onBeforeStart).toHaveBeenCalledOnce();
+    expect(getUserMedia).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
   });
 });
 
@@ -148,6 +178,59 @@ describe("VoiceRecorder capture", () => {
     expect(onAudioFrame.mock.invocationCallOrder[0]).toBeLessThan(
       onRecordingChange.mock.invocationCallOrder.at(-1)!,
     );
+  });
+
+  it("reports the live input level to an external status display", async () => {
+    const pipeline = stubCapturePipeline();
+    const onLevelChange = vi.fn();
+    render(
+      <VoiceRecorder
+        onAudioFrame={vi.fn()}
+        onLevelChange={onLevelChange}
+        onRecordingChange={vi.fn()}
+        onError={vi.fn()}
+        onSilence={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "开始录音" }));
+    await screen.findByRole("button", { name: "停止录音" });
+
+    pipeline.emit(new Float32Array(1_600).fill(0.4));
+
+    expect(onLevelChange).toHaveBeenCalledWith(expect.any(Number));
+    expect(onLevelChange.mock.calls.at(-1)?.[0]).toBeGreaterThan(0);
+  });
+
+  it("replaces the inline voice button with a clickable waveform while recording", async () => {
+    const pipeline = stubCapturePipeline();
+    const user = userEvent.setup();
+
+    render(
+      <VoiceRecorder
+        labels={{ idle: "语音输入", recording: "停止并转写" }}
+        onAudioFrame={vi.fn()}
+        onRecordingChange={vi.fn()}
+        onError={vi.fn()}
+        onSilence={vi.fn()}
+        showWaveform={false}
+        variant="inline-waveform"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "语音输入" }));
+    pipeline.emit(new Float32Array(1_600).fill(0.4));
+
+    const stop = await screen.findByRole("button", {
+      name: "点击波形结束录音",
+    });
+    expect(stop).toHaveClass("w-[154px]", "bg-orange-50");
+    expect(
+      screen.getByRole("img", { name: "实时麦克风音量" }),
+    ).toBeVisible();
+    expect(screen.queryByText("停止并转写")).not.toBeInTheDocument();
+
+    await user.click(stop);
+    expect(screen.getByRole("button", { name: "语音输入" })).toBeVisible();
   });
 
   it("warns once after eight quiet seconds and stays quiet again until sound returns", async () => {

@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { Mic, Square } from "lucide-react";
 import Waveform from "./Waveform";
 
@@ -34,21 +40,50 @@ type AudioContextWithLegacyProcessor = AudioContext & {
   ) => ScriptProcessorNode;
 };
 
-export default function VoiceRecorder({
+export interface VoiceRecorderHandle {
+  start(): Promise<void>;
+  stop(): void;
+}
+
+export interface VoiceRecorderLabels {
+  idle: string;
+  recording: string;
+}
+
+interface VoiceRecorderProps {
+  disabled?: boolean;
+  labels?: VoiceRecorderLabels;
+  onAudioFrame: (frame: Uint8Array) => void;
+  onBeforeStart?: () => boolean | Promise<boolean>;
+  onError: (message: string) => void;
+  onLevelChange?: (level: number) => void;
+  onRecordingChange: (recording: boolean) => void;
+  onSilence: () => void;
+  showWaveform?: boolean;
+  variant?: "default" | "compact" | "inline-waveform";
+}
+
+const defaultLabels: VoiceRecorderLabels = {
+  idle: "按下开始回答",
+  recording: "停止并转写",
+};
+
+const VoiceRecorder = forwardRef<VoiceRecorderHandle, VoiceRecorderProps>(
+  function VoiceRecorder({
   disabled,
+  labels,
   onAudioFrame,
+  onBeforeStart,
   onRecordingChange,
   onError,
+  onLevelChange,
   onSilence,
-}: {
-  disabled?: boolean;
-  onAudioFrame: (frame: Uint8Array) => void;
-  onRecordingChange: (recording: boolean) => void;
-  onError: (message: string) => void;
-  onSilence: () => void;
-}) {
+  showWaveform = true,
+  variant = "default",
+}, ref) {
   const [recording, setRecording] = useState(false);
   const [level, setLevel] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const cleanupRef = useRef<(() => void) | null>(null);
   const lastSoundAtRef = useRef(0);
   const warnedRef = useRef(false);
@@ -75,16 +110,31 @@ export default function VoiceRecorder({
     cleanupRef.current = null;
     setRecording(false);
     setLevel(0);
+    onLevelChange?.(0);
     onRecordingChange(false);
   };
 
   useEffect(() => () => cleanupRef.current?.(), []);
 
+  useEffect(() => {
+    if (!recording) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1_000));
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [recording]);
+
   const consumeSamples = (samples: Float32Array, sampleRate: number) => {
     let squareSum = 0;
     for (const sample of samples) squareSum += sample * sample;
     const rms = Math.sqrt(squareSum / Math.max(1, samples.length));
-    setLevel(Math.min(1, rms * 5));
+    const nextLevel = Math.min(1, rms * 5);
+    setLevel(nextLevel);
+    onLevelChange?.(nextLevel);
     if (rms > 0.015) {
       lastSoundAtRef.current = performance.now();
       warnedRef.current = false;
@@ -115,6 +165,8 @@ export default function VoiceRecorder({
       return;
     }
     try {
+      const allowed = await onBeforeStart?.();
+      if (allowed === false) return;
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -178,23 +230,77 @@ export default function VoiceRecorder({
     }
   };
 
+  useImperativeHandle(ref, () => ({ start, stop }));
+
+  const buttonLabels = labels ?? defaultLabels;
+  const buttonLabel = recording ? buttonLabels.recording : buttonLabels.idle;
+  const inlineWaveform = variant === "inline-waveform";
+  const ariaLabel = inlineWaveform && recording
+    ? "点击波形结束录音"
+    : labels
+      ? buttonLabel
+      : recording
+        ? "停止录音"
+        : "开始录音";
+  const compact = variant === "compact" || inlineWaveform;
+  const elapsedLabel = `${String(Math.floor(elapsedSeconds / 60)).padStart(2, "0")}:${String(elapsedSeconds % 60).padStart(2, "0")}`;
+
   return (
-    <div className="flex min-w-0 flex-1 flex-col items-center gap-1.5 sm:flex-row sm:gap-3">
+    <div
+      className={
+        compact
+          ? "flex min-w-0 shrink-0 items-center"
+          : "flex min-w-0 flex-1 flex-col items-center gap-1.5 sm:flex-row sm:gap-3"
+      }
+    >
       <button
         type="button"
         aria-pressed={recording}
-        aria-label={recording ? "停止录音" : "开始录音"}
+        aria-label={ariaLabel}
         // 断线时按钮会被禁用，但正在录音时必须始终能停下麦克风。
         disabled={disabled && !recording}
         onClick={() => (recording ? stop() : void start())}
-        className={`mira-button flex h-14 w-full items-center justify-center gap-2 rounded-2xl px-5 text-sm font-medium text-white sm:h-12 sm:w-auto ${
-          recording ? "bg-red-500" : "bg-orange-500"
-        } disabled:cursor-not-allowed disabled:bg-[#d4d4d4]`}
+        className={
+          inlineWaveform
+            ? `mira-button flex h-11 w-[154px] shrink-0 items-center justify-center gap-2 rounded-[13px] border text-xs font-semibold transition-colors ${
+                recording
+                  ? "border-orange-200 bg-orange-50 text-orange-700 shadow-[0_8px_18px_-15px_rgba(224,95,15,.62)] dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-200"
+                  : "border-black/10 bg-white text-[#3e352e] shadow-[0_7px_16px_-14px_rgba(51,39,30,.55)] dark:border-white/12 dark:bg-white/[0.06] dark:text-[#ececea]"
+              } disabled:cursor-not-allowed disabled:border-black/10 disabled:bg-black/5 disabled:text-black/35 dark:disabled:border-white/10 dark:disabled:bg-white/5 dark:disabled:text-white/35`
+            : compact
+            ? `mira-button flex h-11 shrink-0 items-center justify-center gap-2 rounded-full border px-3.5 text-xs font-semibold transition-colors ${
+                recording
+                  ? "border-red-200 bg-red-50 text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-200"
+                  : "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-400/25 dark:bg-orange-500/10 dark:text-orange-200"
+              } disabled:cursor-not-allowed disabled:border-black/10 disabled:bg-black/5 disabled:text-black/35 dark:disabled:border-white/10 dark:disabled:bg-white/5 dark:disabled:text-white/35`
+            : `mira-button flex h-14 w-full items-center justify-center gap-2 rounded-2xl px-5 text-sm font-medium text-white sm:h-12 sm:w-auto ${
+                recording ? "bg-red-500" : "bg-orange-500"
+              } disabled:cursor-not-allowed disabled:bg-[#d4d4d4]`
+        }
       >
-        {recording ? <Square className="h-4 w-4" /> : <Mic className="h-5 w-5" />}
-        {recording ? "停止并转写" : "按下开始回答"}
+        {inlineWaveform && recording ? (
+          <>
+            <Waveform level={level} active label="实时麦克风音量" />
+            <span className="tabular-nums">{elapsedLabel}</span>
+          </>
+        ) : (
+          <>
+            {recording ? (
+              <Square className="h-4 w-4" />
+            ) : (
+              <Mic
+                className={`h-5 w-5 ${inlineWaveform ? "text-orange-500" : ""}`}
+              />
+            )}
+            {buttonLabel}
+          </>
+        )}
       </button>
-      <Waveform level={level} active={recording} />
+      {showWaveform ? <Waveform level={level} active={recording} /> : null}
     </div>
   );
-}
+});
+
+VoiceRecorder.displayName = "VoiceRecorder";
+
+export default VoiceRecorder;

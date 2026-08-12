@@ -1,6 +1,7 @@
 package com.miraprep.interview;
 
 import com.miraprep.domain.InterviewSession;
+import com.miraprep.domain.InterviewSessionType;
 import com.miraprep.domain.InterviewStatus;
 import jakarta.persistence.LockModeType;
 import java.util.Optional;
@@ -20,11 +21,25 @@ public interface InterviewSessionRepository extends JpaRepository<InterviewSessi
 
     Page<InterviewSession> findByUserIdAndDeletedFalse(Long userId, Pageable pageable);
 
+    Page<InterviewSession> findByUserIdAndDeletedFalseAndSessionType(
+            Long userId, InterviewSessionType sessionType, Pageable pageable);
+
     Page<InterviewSession> findByUserIdAndDeletedFalseAndStatus(
             Long userId, InterviewStatus status, Pageable pageable);
 
+    Page<InterviewSession> findByUserIdAndDeletedFalseAndSessionTypeAndStatus(
+            Long userId,
+            InterviewSessionType sessionType,
+            InterviewStatus status,
+            Pageable pageable);
+
     List<InterviewSession> findByUserIdAndDeletedFalseAndStatusIn(
             Long userId, Collection<InterviewStatus> statuses);
+
+    List<InterviewSession> findByUserIdAndDeletedFalseAndSessionTypeAndStatusIn(
+            Long userId,
+            InterviewSessionType sessionType,
+            Collection<InterviewStatus> statuses);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select session from InterviewSession session where session.id = :id")

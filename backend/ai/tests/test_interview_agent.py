@@ -62,6 +62,37 @@ def _start_payload() -> dict:
     }
 
 
+def test_practice_contract_accepts_exactly_one_source_question() -> None:
+    body = _start_payload()
+    body["mode"] = "practice"
+    body["practiceTarget"] = "main_question"
+    body["questions"] = [
+        {
+            "questionId": "source-domain-question",
+            "phase": "DOMAIN_ASSESSMENT",
+            "text": "如何定位一次线上性能问题？",
+            "focusPoints": ["分析路径", "解决效果"],
+            "order": 1,
+        }
+    ]
+
+    request = InterviewStartRequest.model_validate(body)
+
+    assert request.mode == "practice"
+
+    body["questions"].append(
+        {
+            "questionId": "unexpected-second-question",
+            "phase": "BEHAVIORAL",
+            "text": "第二题不应进入单题练习。",
+            "focusPoints": ["范围"],
+            "order": 2,
+        }
+    )
+    with pytest.raises(ValidationError):
+        InterviewStartRequest.model_validate(body)
+
+
 def test_start_contract_rejects_unsupported_duration() -> None:
     body = _start_payload()
     body["durationMin"] = 20

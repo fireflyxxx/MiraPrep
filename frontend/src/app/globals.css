@@ -446,3 +446,37 @@ body {
     animation-delay: 0s !important;
   }
 }
+
+/* PDF 导出直接打印网页报告本身，避免维护第二套手绘版式。 */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .report-print-root {
+    width: 100%;
+    max-width: none;
+  }
+
+  .report-question-list {
+    display: block;
+  }
+
+  .report-question-print-block {
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+    margin-bottom: .875rem;
+  }
+
+  /* 浏览器插件、开发工具浮层不属于报告，不能进入导出的 PDF。 */
+  body > *:not(:has(.report-print-root)) {
+    display: none !important;
+  }
+}
