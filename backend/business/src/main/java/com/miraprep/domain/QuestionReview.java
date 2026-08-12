@@ -11,6 +11,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -38,6 +39,13 @@ public class QuestionReview extends BaseAuditableEntity {
 
     @Column(nullable = false, precision = 5, scale = 2)
     private BigDecimal score;
+
+    @Column(name = "baseline_score", precision = 5, scale = 2)
+    private BigDecimal baselineScore;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "comparison_json")
+    private Map<String, Object> comparisonJson;
 
     @Column(name = "reference_answer", columnDefinition = "TEXT")
     private String referenceAnswer;

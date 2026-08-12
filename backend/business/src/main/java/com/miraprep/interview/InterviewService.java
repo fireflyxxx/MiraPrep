@@ -31,6 +31,7 @@ import com.miraprep.interview.dto.OutlineQuestionRequest;
 import com.miraprep.interview.dto.RuntimeGradingRequest;
 import com.miraprep.resume.ResumeRepository;
 import com.miraprep.report.ReportRepository;
+import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
@@ -64,6 +65,7 @@ public class InterviewService {
     private final InterviewMessageRepository interviewMessageRepository;
     private final ResumeRepository resumeRepository;
     private final ReportRepository reportRepository;
+    private final PracticeSessionRepository practiceSessionRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final AuthTokenStore runtimeTokenStore;
     private final RequestRateLimiter rateLimiter;
@@ -76,6 +78,7 @@ public class InterviewService {
             InterviewMessageRepository interviewMessageRepository,
             ResumeRepository resumeRepository,
             ReportRepository reportRepository,
+            PracticeSessionRepository practiceSessionRepository,
             ApplicationEventPublisher eventPublisher,
             AuthTokenStore runtimeTokenStore,
             RequestRateLimiter rateLimiter,
@@ -86,6 +89,7 @@ public class InterviewService {
         this.interviewMessageRepository = interviewMessageRepository;
         this.resumeRepository = resumeRepository;
         this.reportRepository = reportRepository;
+        this.practiceSessionRepository = practiceSessionRepository;
         this.eventPublisher = eventPublisher;
         this.runtimeTokenStore = runtimeTokenStore;
         this.rateLimiter = rateLimiter;
@@ -295,7 +299,7 @@ public class InterviewService {
         }
         List<Question> saved = questionRepository.saveAll(questions);
         session.setOutlineStatus(OutlineStatus.READY);
-        publishRuntimeStart(session, saved, "interview");
+        publishRuntimeStart(session, saved, "interview", null);
     }
 
     /**
@@ -303,7 +307,7 @@ public class InterviewService {
      * 时只记日志：会话仍是 READY，用户重新创建一场即可，不该让回调失败。
      */
     void publishRuntimeStart(
-            InterviewSession session, List<Question> questions, String mode) {
+            InterviewSession session, List<Question> questions, String mode, String practiceTarget) {
         String runtimeToken = runtimeTokenStore.get(runtimeTokenKey(session.getId()));
         if (runtimeToken == null) {
             LOGGER.warn(
@@ -325,6 +329,7 @@ public class InterviewService {
                 new AiServiceClient.InterviewStartRequest(
                         session.getId(),
                         mode,
+                        practiceTarget,
                         runtimeToken,
                         session.getDurationMin(),
                         lower(session.getInterviewerStyle()),
@@ -422,6 +427,16 @@ public class InterviewService {
         }
 
         List<AiServiceClient.InterviewGradeTranscriptQuestion> transcript = new ArrayList<>();
+        com.miraprep.domain.PracticeSession practiceMetadata =
+                practiceSessionRepository.findById(session.getId()).orElse(null);
+        String baselineAnswer =
+                practiceMetadata == null ? null : practiceMetadata.getSourceAnswer();
+        BigDecimal baselineScore =
+                practiceMetadata == null ? null : practiceMetadata.getSourceScore();
+        List<Map<String, Object>> baselineFollowUps =
+                practiceMetadata == null || practiceMetadata.getSourceFollowUps() == null
+                        ? List.of()
+                        : List.copyOf(practiceMetadata.getSourceFollowUps());
         for (Question question : questions) {
             List<InterviewMessage> messages =
                     messagesByQuestion.getOrDefault(question.getId(), List.of());
@@ -445,6 +460,9 @@ public class InterviewService {
                     question.getFocusPoints() == null ? List.of() : question.getFocusPoints(),
                     question.getText(),
                     primaryAnswer.getContent(),
+                    baselineAnswer,
+                    baselineScore,
+                    baselineFollowUps,
                     followUps(messages, primaryAnswer.getSeq())));
         }
         questionRepository.saveAll(questions);

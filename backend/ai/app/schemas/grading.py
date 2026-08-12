@@ -30,7 +30,18 @@ class TranscriptQuestion(BaseModel):
     focusPoints: list[str] = Field(min_length=1)
     question: str = Field(min_length=1)
     answer: str = Field(min_length=1)
+    baselineAnswer: str | None = Field(default=None, min_length=1)
+    baselineScore: float | None = Field(default=None, ge=0, le=10)
+    baselineFollowUps: list[dict[str, Any]] = Field(default_factory=list)
     followUps: list[dict[str, Any] | str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def baseline_score_requires_answer(self) -> TranscriptQuestion:
+        if self.baselineScore is not None and self.baselineAnswer is None:
+            raise ValueError("baselineScore requires baselineAnswer")
+        if self.baselineFollowUps and self.baselineAnswer is None:
+            raise ValueError("baselineFollowUps require baselineAnswer")
+        return self
 
 
 class GradingRequest(BaseModel):
@@ -52,13 +63,22 @@ class FollowUpReview(BaseModel):
     question: str = Field(min_length=1)
     answer: str = Field(min_length=1)
     answerSeconds: int | None = Field(default=None, ge=0)
+    score: int = Field(ge=0, le=10)
     referenceAnswer: str = Field(min_length=1)
     suggestions: list[str] = Field(min_length=1)
+
+
+class AnswerComparison(BaseModel):
+    improvements: list[str]
+    remainingGaps: list[str]
+    scoreRationale: str = Field(min_length=1)
 
 
 class QuestionReview(BaseModel):
     questionId: int = Field(gt=0)
     score: int = Field(ge=0, le=10)
+    baselineScore: float | None = Field(default=None, ge=0, le=10)
+    comparison: AnswerComparison | None = None
     referenceAnswer: str = Field(min_length=1)
     suggestions: list[str] = Field(min_length=1)
     followUpChain: list[FollowUpReview] = Field(default_factory=list)

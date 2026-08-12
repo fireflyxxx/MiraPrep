@@ -34,14 +34,22 @@ public record GradeResultRequest(
     public record QuestionReviewResult(
             @NotNull @Positive Long questionId,
             @NotNull @DecimalMin("0") @DecimalMax("10") BigDecimal score,
+            @DecimalMin("0") @DecimalMax("10") BigDecimal baselineScore,
+            @Valid AnswerComparisonResult comparison,
             @NotBlank String referenceAnswer,
             @NotEmpty List<@NotBlank String> suggestions,
             @NotNull List<@Valid FollowUpReviewResult> followUpChain) {}
+
+    public record AnswerComparisonResult(
+            @NotNull List<@NotBlank String> improvements,
+            @NotNull List<@NotBlank String> remainingGaps,
+            @NotBlank String scoreRationale) {}
 
     public record FollowUpReviewResult(
             @NotBlank String question,
             @NotBlank String answer,
             @PositiveOrZero Integer answerSeconds,
+            @DecimalMin("0") @DecimalMax("10") BigDecimal score,
             @NotBlank String referenceAnswer,
             @NotEmpty List<@NotBlank String> suggestions) {}
 }

@@ -43,6 +43,7 @@ from app.schemas.interview import (
     InterviewSessionState,
     InterviewStartRequest,
     InterviewStatus,
+    PracticeTarget,
     RuntimeMode,
     RuntimeInterviewPhase,
     RuntimeQuestion,
@@ -207,6 +208,7 @@ class InterviewAgentService:
             state = InterviewSessionState(
                 sessionId=session_id,
                 mode=body.mode,
+                practiceTarget=body.practiceTarget,
                 durationMin=body.durationMin,
                 interviewerStyle=body.interviewerStyle,
                 accessTokenHash=self._hash_access_token(body.accessToken),
@@ -230,7 +232,11 @@ class InterviewAgentService:
                 await self._emit_interviewer_message(
                     state,
                     (
-                        "我们只重练这一道题。请重新组织一次回答，提交后会直接生成对比反馈。"
+                        (
+                            "我们会围绕这道主问题练习，必要时我会继续追问；完成后直接生成对比反馈。"
+                            if state.practiceTarget is PracticeTarget.MAIN_QUESTION
+                            else "我们只重练这条追问。请重新组织一次回答，提交后会直接生成对比反馈。"
+                        )
                         if state.mode is RuntimeMode.PRACTICE
                         else "你好，我是本次模拟面试官。接下来我会按阶段提问，请结合真实经历作答。"
                     ),
@@ -267,7 +273,10 @@ class InterviewAgentService:
             if await self._enforce_deadline_locked(state):
                 return
 
-            if state.mode is RuntimeMode.PRACTICE:
+            if (
+                state.mode is RuntimeMode.PRACTICE
+                and state.practiceTarget is not PracticeTarget.MAIN_QUESTION
+            ):
                 await self._finish(state, "practice_completed")
                 return
 
@@ -277,7 +286,7 @@ class InterviewAgentService:
 
             if not answer:
                 if state.followUpCount >= 3:
-                    await self._advance(state)
+                    await self._advance_or_finish_practice(state)
                     return
                 state.followUpCount += 1
                 await self._store.save(state)
@@ -305,7 +314,7 @@ class InterviewAgentService:
                 await self._emit_decision_reply(state, question, turn.decision)
                 return
 
-            await self._advance(state)
+            await self._advance_or_finish_practice(state)
 
     async def end(self, session_id: int, reason: str) -> None:
         async with self._store.lock(session_id):
@@ -709,6 +718,12 @@ class InterviewAgentService:
                 await self._finish(state, "completed")
                 return
         await self._move_to_question(state, next_index)
+
+    async def _advance_or_finish_practice(self, state: InterviewSessionState) -> None:
+        if state.mode is RuntimeMode.PRACTICE:
+            await self._finish(state, "practice_completed")
+            return
+        await self._advance(state)
 
     def _plan_next_phase(self, state: InterviewSessionState) -> InterviewPhase | None:
         """按阶段预算决定下一题归属；超时被强推后不回头补前面欠的题。"""

@@ -12,7 +12,15 @@ score 必须是 0 到 10 的整数；referenceAnswer 在题目与简历经历相
 真实存在的项目或技能，不得编造经历；行为题等不相关题目不要生硬塞入技术关键词。
 suggestions 给出内容、结构、表达三个方面的具体改进建议。
 questionId 必须原样返回。followUpChain 必须与输入追问逐条对应，不得遗漏；每条都要保留
-question、answer、answerSeconds，并分别生成有内容的 referenceAnswer 和 suggestions。
+question、answer、answerSeconds，并分别给出独立的 0 到 10 整数 score、有内容的 referenceAnswer 和 suggestions。
+当且仅当输入包含 baselineAnswer 时，还必须返回 baselineScore 和 comparison。若输入同时包含
+baselineScore，必须原样返回该分数；否则用同一评分标准独立补评 baselineAnswer。comparison 中：
+improvements 只写本次回答相对旧回答新增或明显改善的有效内容；remainingGaps 写本次仍缺失、
+不够具体或相对旧回答退步的内容；scoreRationale 用一句话明确解释旧分、新分及分差原因。
+比较主问题时应同时比较 baselineFollowUps 与本次 followUps 对完整度的贡献；比较历史追问时
+baselineFollowUps 为空，只比较该追问本身。
+不得拿其他题目的回答代替，也不得为了迎合分差虚构优点或缺点。没有对应内容时数组返回空列表。
+输入不包含 baselineAnswer 时，baselineScore 与 comparison 都必须为 null。
 
 输入答案可能来自 ASR（语音转文字），其中的同音替换、英文技术名词误写、断词或标点异常
 可能是识别器造成的，不代表候选人的真实口语表现。不得据此判断候选人存在口误、吞字、语速或发音问题，

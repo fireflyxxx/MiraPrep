@@ -215,6 +215,10 @@ public class ReportService {
         review.setReport(report);
         review.setQuestion(question);
         review.setScore(result.score());
+        review.setBaselineScore(result.baselineScore());
+        review.setComparisonJson(result.comparison() == null
+                ? null
+                : comparisonMap(result.comparison()));
         review.setReferenceAnswer(result.referenceAnswer().trim());
         review.setSuggestions(List.copyOf(result.suggestions()));
         review.setFollowUpChainJson(result.followUpChain().stream()
@@ -224,11 +228,23 @@ public class ReportService {
         return review;
     }
 
+    private Map<String, Object> comparisonMap(
+            GradeResultRequest.AnswerComparisonResult result) {
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("improvements", List.copyOf(result.improvements()));
+        value.put("remainingGaps", List.copyOf(result.remainingGaps()));
+        value.put("scoreRationale", result.scoreRationale().trim());
+        return value;
+    }
+
     private Map<String, Object> followUpMap(GradeResultRequest.FollowUpReviewResult result) {
         Map<String, Object> value = new LinkedHashMap<>();
         value.put("question", result.question().trim());
         value.put("answer", result.answer().trim());
         value.put("answerSeconds", result.answerSeconds());
+        if (result.score() != null) {
+            value.put("score", result.score());
+        }
         value.put("referenceAnswer", result.referenceAnswer().trim());
         value.put("suggestions", List.copyOf(result.suggestions()));
         return value;

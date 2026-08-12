@@ -64,10 +64,11 @@ def _start_request() -> InterviewStartRequest:
     )
 
 
-def _practice_start_request() -> InterviewStartRequest:
+def _practice_start_request(target: str = "follow_up") -> InterviewStartRequest:
     return InterviewStartRequest.model_validate(
         {
             "mode": "practice",
+            "practiceTarget": target,
             "durationMin": 15,
             "interviewerStyle": "professional",
             "accessToken": "test-practice-token-121-at-least-32-chars",
@@ -298,7 +299,7 @@ async def test_start_opens_interview_and_asks_first_outline_question() -> None:
 
 
 @pytest.mark.asyncio
-async def test_practice_finishes_after_one_answer_without_decision_or_follow_up() -> None:
+async def test_follow_up_practice_finishes_after_one_answer_without_decision() -> None:
     service, store, llm, _, grader, _ = _service()
     await service.start(121, _practice_start_request())
 
@@ -327,6 +328,50 @@ async def test_practice_finishes_after_one_answer_without_decision_or_follow_up(
         ),
     )
     assert len(grader.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_main_question_practice_allows_follow_up_then_finishes_without_next_question() -> (
+    None
+):
+    service, store, llm, _, grader, _ = _service(
+        decisions=[
+            json.dumps({"action": "FOLLOW_UP", "responseInstruction": "追问定位过程"}),
+            json.dumps({"action": "NEXT_QUESTION"}),
+        ],
+        replies=["请具体说明你怎样确认瓶颈位置？"],
+    )
+    await service.start(122, _practice_start_request("main_question"))
+
+    await service.answer(
+        122,
+        InterviewAnswerRequest(
+            answerId="practice-main-answer-001",
+            content="我先观察接口延迟和错误率，再结合调用链缩小范围。",
+            questionId=121,
+        ),
+    )
+
+    after_follow_up = await store.get(122)
+    assert after_follow_up.status == "ACTIVE"
+    assert after_follow_up.followUpCount == 1
+    assert after_follow_up.history[-1].content == "请具体说明你怎样确认瓶颈位置？"
+
+    await service.answer(
+        122,
+        InterviewAnswerRequest(
+            answerId="practice-main-answer-002",
+            content="最后通过对照压测确认数据库连接池配置是主要瓶颈。",
+            questionId=121,
+        ),
+    )
+
+    state = await store.get(122)
+    candidate_messages = [message for message in state.history if message.role == "candidate"]
+    assert state.status == "ENDED"
+    assert len(candidate_messages) == 2
+    assert len(llm.complete_calls) == 2
+    assert grader.calls[0]["reason"] == "practice_completed"
 
 
 @pytest.mark.asyncio

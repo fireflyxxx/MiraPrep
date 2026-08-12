@@ -65,6 +65,7 @@ def _start_payload() -> dict:
 def test_practice_contract_accepts_exactly_one_source_question() -> None:
     body = _start_payload()
     body["mode"] = "practice"
+    body["practiceTarget"] = "main_question"
     body["questions"] = [
         {
             "questionId": "source-domain-question",

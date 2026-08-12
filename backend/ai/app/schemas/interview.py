@@ -53,6 +53,11 @@ class RuntimeMode(StrEnum):
     PRACTICE = "practice"
 
 
+class PracticeTarget(StrEnum):
+    MAIN_QUESTION = "main_question"
+    FOLLOW_UP = "follow_up"
+
+
 class ConversationRole(StrEnum):
     INTERVIEWER = "interviewer"
     CANDIDATE = "candidate"
@@ -76,6 +81,7 @@ class PendingAudioFrame(BaseModel):
 class InterviewSessionState(BaseModel):
     sessionId: int = Field(gt=0)
     mode: RuntimeMode = RuntimeMode.INTERVIEW
+    practiceTarget: PracticeTarget | None = None
     durationMin: Literal[15, 30, 45]
     interviewerStyle: str = Field(min_length=1)
     accessTokenHash: str = Field(min_length=64, max_length=64)
@@ -151,6 +157,7 @@ class InterviewStartRequest(BaseModel):
     """
 
     mode: RuntimeMode = RuntimeMode.INTERVIEW
+    practiceTarget: PracticeTarget | None = None
     durationMin: Literal[15, 30, 45]
     interviewerStyle: str = Field(min_length=1)
     accessToken: str = Field(min_length=32, max_length=256)
@@ -171,7 +178,12 @@ class InterviewStartRequest(BaseModel):
         if self.mode is RuntimeMode.PRACTICE:
             if len(self.questions) != 1:
                 raise ValueError("practice runtime must contain exactly one question")
+            if self.practiceTarget is None:
+                raise ValueError("practice runtime must declare its target")
             return self
+
+        if self.practiceTarget is not None:
+            raise ValueError("interview runtime cannot declare a practice target")
 
         ordered_questions = sorted(self.questions, key=lambda question: question.order)
         phase_order = {phase: index for index, phase in enumerate(InterviewPhase)}
