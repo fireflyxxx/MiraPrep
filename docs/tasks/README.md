@@ -132,4 +132,5 @@ Spring 报告回调”已经通过两端自动化测试；真实 LLM、MySQL 和
 | T-118 | REVIEW | PDF 导出已实现并在本地真实链路验收（Spring 76 tests / 前端 185 tests 通过），待提交发布 |
 | T-119 | REVIEW | 分享链接（脱敏公开只读）与同岗位历史折线已实现，浏览器走通「开启→匿名访问→关闭失效」全流程（Spring 81 tests / 前端 195 tests 通过），待提交发布 |
 | T-120 | REVIEW | Google（GIS ID Token）与 GitHub（授权码 + state）登录已实现，微信占位已删；Spring 108 tests / 前端 209 tests 通过；两家真实 client id 的端到端走查待做 |
-| T-121~T-123 | TODO | 从 T-121 继续 |
+| T-121 | DONE | 主问题与每条追问均可重练；主问题保留追问链，历史追问单次作答；三端门禁通过并随本次 PR 发布 |
+| T-122~T-123 | TODO | 从 T-122 继续 |
